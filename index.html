@@ -1268,7 +1268,33 @@ const ligaoBarangayGeoJSON =
   // access code, checked server-side in doPost().
   const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxJF6-29JjOZRZXs8X7FEC0uQZkCcn7mSNjNTOmGrPy7WvDgwEhZwP4xCDg9b1BUyVe/exec';
 
-  // ---- Access code (kept only on this device; never in this file's source) ----
+  // ---- Access code ----
+  // The real code is kept only on this device (localStorage), never in this
+  // file's source. What IS in this file is a salted SHA-256 hash of it --
+  // a one-way scramble that lets the app check a typed code INSTANTLY and
+  // entirely offline (no server round trip needed to open the form at all,
+  // including the very first time on a new phone), without the real code
+  // ever having to sit in this public repository in readable form.
+  //
+  // To change the access code later: pick a new one, update FORM_ACCESS_CODE
+  // in Apps Script's Script Properties, then replace both constants below
+  // with the new code's hash (see README_SETUP.md for the one-line command).
+  // Until both sides are updated to match, phones running the OLD hash will
+  // still open locally but will fail real submissions against the NEW
+  // server code -- update Script Properties and this file together.
+  const ACCESS_CODE_SALT = 'scout-dengue-form-v1-salt-9f3k2';
+  const ACCESS_CODE_HASH = '1a268823131474cc4a85437c6c26cc69c361efb0f471447c32bf48d36e257676';
+
+  async function hashCode(code){
+    const data = new TextEncoder().encode(ACCESS_CODE_SALT + code);
+    const digest = await crypto.subtle.digest('SHA-256', data);
+    return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('');
+  }
+  async function checkCodeLocally(code){
+    try { return (await hashCode(code)) === ACCESS_CODE_HASH; }
+    catch(e){ return false; } // crypto.subtle unavailable (very old browser) -- fails safe, closed
+  }
+
   const ACCESS_CODE_KEY = 'scout_dengue_access_code';
 
   function getAccessCode(){
@@ -1299,19 +1325,6 @@ const ligaoBarangayGeoJSON =
     });
   }
 
-  // Verifies a typed access code against the server WITHOUT submitting a
-  // case (doPost's "ping" action). Resolves true/false/'offline'.
-  async function verifyAccessCode(code){
-    // 25s, not 15s: Apps Script's first request after being idle can take
-    // 10-20+ seconds on its own ("cold start") before your code even runs --
-    // a tighter timeout here was reporting that normal delay as "no signal"
-    // on phones, even when the server would have answered a few seconds
-    // later. Confirmed by testing: a real response took about 10s.
-    const res = await postToServer({ accessCode: code, formVersion: FORM_VERSION, action: 'ping' }, 25000);
-    if(!res.ok) return 'offline';
-    if(res.json && res.json.success) return true;
-    return false;
-  }
 
   // ---- Offline queue ----
   const QUEUE_KEY = 'scout_dengue_queue_v1';
@@ -1877,7 +1890,7 @@ const ligaoBarangayGeoJSON =
 <script>
   // ---- Access-code gate ----
   // Runs after the form's own script (so FORM_VERSION, APPS_SCRIPT_URL,
-  // getAccessCode/setAccessCode/verifyAccessCode are already defined) but
+  // getAccessCode/setAccessCode/checkCodeLocally are already defined) but
   // before the person can see or use the form.
   (function(){
     const gate = document.getElementById('accessGate');
@@ -1903,38 +1916,24 @@ const ligaoBarangayGeoJSON =
       const stored = getAccessCode();
       if(!stored) return; // nothing saved yet -- leave the gate showing
 
-      // Trust it immediately -- don't make a BHW wait through a server
-      // round trip (which can take 10+ seconds on a slow connection or
-      // right after the script has been idle) just to reopen an app that
-      // was already working on this exact phone. Re-checked quietly in the
-      // background below; only an ACTUAL rejection re-locks the form.
+      // Already confirmed on this phone before -- trust it, permanently,
+      // with no network call at all. Every real case submission still goes
+      // through the server's own check every time (unchanged); this only
+      // governs how fast the form itself opens.
       revealForm();
-
-      verifyAccessCode(stored).then(result => {
-        if(result === false){
-          // Genuinely revoked/changed (not merely offline/slow) -- this is
-          // the one case worth interrupting the BHW for.
-          gate.style.display = 'flex';
-          mainPage.style.display = 'none';
-          input.value = '';
-          msg.textContent = 'This access code is no longer valid. Please re-enter it.';
-        }
-        // true or 'offline': already showing the form, nothing more to do.
-      });
     }
 
     button.addEventListener('click', async () => {
       const code = input.value.trim();
       if(!code){ msg.textContent = 'Enter the access code first.'; return; }
       button.disabled = true;
-      msg.textContent = 'Checking…';
-      const result = await verifyAccessCode(code);
+      // Checked entirely on-device (see checkCodeLocally above) -- no
+      // network wait, even the very first time on a brand-new phone.
+      const ok = await checkCodeLocally(code);
       button.disabled = false;
-      if(result === true){
+      if(ok){
         setAccessCode(code);
         revealForm();
-      } else if(result === 'offline'){
-        msg.textContent = 'No signal right now -- connect once to confirm a new code, then it will keep working offline.';
       } else {
         msg.textContent = 'Incorrect code. Please check with your City Health Office.';
       }
@@ -1943,9 +1942,9 @@ const ligaoBarangayGeoJSON =
 
     // Auto-fill from a shared link (?code=...), e.g. from a tapped SMS link
     // or a scanned QR code -- so a BHW never has to type the code by hand.
-    // Verified the exact same way a typed code is (through the server), and
-    // removed from the address bar immediately so it doesn't linger in the
-    // phone's browser history after this first visit.
+    // Checked the same instant, on-device way as a typed code, then removed
+    // from the address bar immediately so it doesn't linger in the phone's
+    // browser history after this first visit.
     async function tryLinkCode(){
       const params = new URLSearchParams(window.location.search);
       const linked = params.get('code');
@@ -1953,34 +1952,10 @@ const ligaoBarangayGeoJSON =
 
       history.replaceState({}, '', window.location.pathname);
 
-      // Same code already confirmed on this exact phone before? Trust it
-      // immediately, with no network round trip at all -- this is the
-      // common case (reopening the same setup link/QR later) and there is
-      // nothing new here for the server to check.
-      const stored = getAccessCode();
-      if(stored && stored === linked){
-        revealForm();
-        return true;
-      }
-
-      msg.textContent = 'Checking…';
-      const result = await verifyAccessCode(linked);
-      if(result === true){
+      const ok = await checkCodeLocally(linked);
+      if(ok){
         setAccessCode(linked);
         revealForm();
-        return true;
-      }
-      if(result === 'offline'){
-        // A DIFFERENT code than what's stored, and can't reach the server to
-        // confirm it right now. Fall back to whatever WAS already trusted on
-        // this phone, if anything -- same trust rule tryStoredCode() uses --
-        // rather than blocking entirely on one failed check. Only a phone
-        // with no confirmed code at all, and no signal, has to wait.
-        if(stored){
-          revealForm();
-          return true;
-        }
-        msg.textContent = 'No signal right now -- open this link again once you have a connection.';
       } else {
         msg.textContent = 'That link\'s code was not accepted. Please check with your City Health Office.';
       }
