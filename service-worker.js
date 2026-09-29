@@ -5,13 +5,14 @@
 // This is separate from FORM_VERSION in index.html (that one guards what the
 // SERVER will accept; this one guards what gets served from THIS phone's
 // cache).
-const CACHE_NAME = 'scout-dengue-form-v3';
+const CACHE_NAME = 'scout-dengue-form-v4';
 
 const PRECACHE = [
   './',
   './index.html',
   './manifest.json',
   './icon.svg',
+  './icon-180.png',
   './vendor/leaflet/leaflet.js',
   './vendor/leaflet/leaflet.css',
   './vendor/leaflet/images/marker-icon.png',

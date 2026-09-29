@@ -5,7 +5,14 @@
   <meta name="theme-color" content="#12302D">
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
-  <link rel="apple-touch-icon" href="icon.svg">
+  <link rel="apple-touch-icon" href="icon-180.png">
+  <!-- iOS ignores the manifest for a lot of "Add to Home Screen" behavior --
+       these three make it launch full-screen with no browser bar, use the
+       right name/icon, and get a status bar that doesn't clash with the
+       green header, the same way manifest.json already does for Android. -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Dengue Form">
   <link rel="stylesheet" href="vendor/leaflet/leaflet.css" />
   <script src="vendor/leaflet/leaflet.js"></script>
   <link rel="stylesheet" href="vendor/geocoder/Control.Geocoder.css" />
