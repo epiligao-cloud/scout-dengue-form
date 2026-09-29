@@ -92,7 +92,12 @@
       min-width:0;
       min-height:40px;
       padding:9px 10px;
-      font-size:14px;
+      /* 16px, not 14px: iOS Safari auto-zooms in on any field smaller than
+         this when it gets focus, and often doesn't zoom back out cleanly
+         afterward -- leaving the page (and the queue badge) stuck zoomed
+         in. 16px is below Safari's trigger threshold, so it never zooms at
+         all -- the real fix, rather than fighting the zoom-out after the fact. */
+      font-size:16px;
       line-height:1.2;
       box-sizing:border-box;
       border:1px solid var(--border);
@@ -110,7 +115,7 @@
       grid-template-columns:repeat(12,1fr);
       gap:14px 16px;
     }
-    .field-grid .field{ grid-column:span 12; }
+    .field-grid .field{ grid-column:span 12; min-width:0; }
     .field-grid .group-label{
       grid-column:span 12;
       font-size:12px; font-weight:700; color:var(--text);
@@ -160,6 +165,15 @@
     }
 
     #map{ height:220px; border-radius:8px; margin-top:8px; border:1px solid var(--border); }
+    /* Barangay-name labels for the offline fallback (see boundariesLayer) --
+       a plain small caption instead of Leaflet's default white tooltip box,
+       so a map full of them reads as map labels, not a wall of popups. */
+    .brgy-fallback-label{
+      background:none; border:none; box-shadow:none;
+      font-size:10px; font-weight:600; color:#12302D;
+      text-shadow:0 0 3px #fff, 0 0 3px #fff, 0 0 3px #fff;
+    }
+    .brgy-fallback-label::before{ display:none; }
     .loc-btn{
       width:100%; padding:11px; border:none; border-radius:6px;
       background:linear-gradient(180deg, var(--brand-primary) 0%, var(--brand-dark) 100%);
@@ -257,6 +271,11 @@
       color:#6B7280; margin:0 0 12px; padding-bottom:6px; border-bottom:1px solid var(--border);
     }
     .pi-row{ display:grid; grid-template-columns:1fr; gap:12px; margin-bottom:12px; }
+    /* Grid items don't shrink below their content's natural minimum width by
+       default -- an input[type=date]'s native picker (especially on iOS) is
+       wider than a plain text box, so without this it refuses to shrink to
+       fit a multi-column row and overflows past the card's edge instead. */
+    .pi-row > div{ min-width:0; }
     .pi-row:last-child{ margin-bottom:0; }
 
     @media (min-width: 768px){
@@ -1103,6 +1122,36 @@ const ligaoBarangayGeoJSON =
     streetLayer.addTo(map);
     L.control.layers({ 'Street': streetLayer, 'Satellite': satelliteLayer }, null, { position: 'topright' }).addTo(map);
 
+    // ---- Offline fallback: barangay boundaries in place of missing tiles ----
+    // Draws ONLY when tiles actually fail to load (or the phone is already
+    // offline at page load) -- with a real connection this never appears,
+    // so the map looks and behaves exactly as it always has. It reuses the
+    // same GeoJSON already bundled into the app for the barangay dropdown,
+    // so there is nothing new to download and no map-tile terms of service
+    // to worry about (unlike caching the actual satellite/street imagery,
+    // which both providers' terms don't allow for offline redistribution).
+    const boundariesLayer = L.geoJSON(ligaoBarangayGeoJSON, {
+      style: { color: '#2C6A47', weight: 1.5, fillOpacity: 0.05 }
+    }).bindTooltip(layer => layer.feature.properties.name, {
+      permanent: true, direction: 'center', className: 'brgy-fallback-label'
+    });
+    let showingFallback = false;
+    function showFallback(){
+      if(showingFallback) return;
+      showingFallback = true;
+      boundariesLayer.addTo(map);
+    }
+    function hideFallback(){
+      if(!showingFallback) return;
+      showingFallback = false;
+      map.removeLayer(boundariesLayer);
+    }
+    [satelliteLayer, streetLayer].forEach(layer => {
+      layer.on('tileerror', showFallback);
+      layer.on('load', hideFallback); // a layer's tiles all loaded successfully
+    });
+    if(navigator.onLine === false) showFallback(); // don't wait for a tile to fail first
+
     // Self-contained red pin icon (inline SVG, no external image dependency)
     const redPinIcon = L.divIcon({
       className: 'red-pin-icon',
@@ -1610,7 +1659,7 @@ const ligaoBarangayGeoJSON =
 
     box.appendChild(el('div', 'margin-top:10px;font-size:12px;color:#555;',
       'Backup copy (contains patient data — send only through channels your office approves):'));
-    const ta = el('textarea', 'width:100%;height:110px;font-size:11px;margin-top:4px;');
+    const ta = el('textarea', 'width:100%;height:110px;font-size:16px;margin-top:4px;');
     ta.readOnly = true;
     ta.value = backupText(q);
     box.appendChild(ta);
