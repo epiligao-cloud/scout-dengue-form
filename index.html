@@ -1259,7 +1259,7 @@ const ligaoBarangayGeoJSON =
   // URL your Apps Script "Manage deployments" page shows; it is public
   // (deployed as "Anyone") but every request must still carry a valid
   // access code, checked server-side in doPost().
-  const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxJF6-29JjOZRZXs8X7FEC0uQZkCcn7mSNjNTOmGrPy7WvDgwEhZwP4xCDg9b1BUyVe/exec';
+  const APPS_SCRIPT_URL = 'PASTE_YOUR_DEPLOYED_WEB_APP_URL_HERE';
 
   // ---- Access code (kept only on this device; never in this file's source) ----
   const ACCESS_CODE_KEY = 'scout_dengue_access_code';
@@ -1619,7 +1619,15 @@ const ligaoBarangayGeoJSON =
   }
 
   setInterval(flushQueue, RETRY_MS);
-  window.addEventListener('online', flushQueue);
+  window.addEventListener('online', () => {
+    flushQueue();
+    // A phone often reports "online" a few seconds before it can actually
+    // reach anything (radio reconnecting, captive portal, etc.). If that
+    // first attempt lands in that gap and fails, this follow-up catches it
+    // -- without this, a failed case would otherwise sit until the regular
+    // 5-minute cycle instead of sending within moments of reconnecting.
+    setTimeout(flushQueue, 8000);
+  });
   document.addEventListener('visibilitychange', () => {
     if(document.visibilityState === 'visible') flushQueue();
   });
@@ -1923,6 +1931,16 @@ const ligaoBarangayGeoJSON =
 
       history.replaceState({}, '', window.location.pathname);
 
+      // Same code already confirmed on this exact phone before? Trust it
+      // immediately, with no network round trip at all -- this is the
+      // common case (reopening the same setup link/QR later) and there is
+      // nothing new here for the server to check.
+      const stored = getAccessCode();
+      if(stored && stored === linked){
+        revealForm();
+        return true;
+      }
+
       msg.textContent = 'Checking…';
       const result = await verifyAccessCode(linked);
       if(result === true){
@@ -1931,6 +1949,15 @@ const ligaoBarangayGeoJSON =
         return true;
       }
       if(result === 'offline'){
+        // A DIFFERENT code than what's stored, and can't reach the server to
+        // confirm it right now. Fall back to whatever WAS already trusted on
+        // this phone, if anything -- same trust rule tryStoredCode() uses --
+        // rather than blocking entirely on one failed check. Only a phone
+        // with no confirmed code at all, and no signal, has to wait.
+        if(stored){
+          revealForm();
+          return true;
+        }
         msg.textContent = 'No signal right now -- open this link again once you have a connection.';
       } else {
         msg.textContent = 'That link\'s code was not accepted. Please check with your City Health Office.';
