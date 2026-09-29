@@ -1,0 +1,12 @@
+{
+  "name": "SCOUT Dengue Case Form",
+  "short_name": "Dengue Form",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#F9FAFB",
+  "theme_color": "#12302D",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

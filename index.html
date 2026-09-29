@@ -1,0 +1,1956 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#12302D">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon.svg">
+  <link rel="stylesheet" href="vendor/leaflet/leaflet.css" />
+  <script src="vendor/leaflet/leaflet.js"></script>
+  <link rel="stylesheet" href="vendor/geocoder/Control.Geocoder.css" />
+  <script src="vendor/geocoder/Control.Geocoder.min.js"></script>
+  <style>
+    :root{
+      --primary:#2C6A47;
+      --success:#15803D;
+      --warning:#F59E0B;
+      --danger:#DC2626;
+      --text:#1F2937;
+      --border:#E5E7EB;
+      --bg:#F9FAFB;
+      --brand-primary:#12302D;
+      --brand-dark:#102326;
+    }
+    *{box-sizing:border-box;}
+    body{
+      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+      color:var(--text);
+      background:var(--bg);
+      margin:0;
+      padding:0;
+    }
+
+    .page{
+      max-width:1200px;
+      width:calc(100% - 32px);
+      margin:0 auto;
+      padding-bottom:32px;
+    }
+
+    header{
+      background:linear-gradient(180deg, var(--brand-primary) 0%, var(--brand-dark) 100%);
+      color:#fff;
+      padding:18px 20px;
+      text-align:center;
+      border-radius:10px;
+      margin:16px 0 20px;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      gap:14px;
+    }
+    header .header-logo{ width:88px; height:auto; flex-shrink:0; }
+    header .header-logo svg{ display:block; width:100%; height:auto; }
+    header .header-text{ text-align:left; }
+    header h1{ font-size:16px; margin:0 0 2px; font-weight:700; }
+    header p{ font-size:12px; margin:0; opacity:.9; }
+
+    .card{
+      background:#fff;
+      border-radius:10px;
+      border:1px solid var(--border);
+      overflow:hidden;
+      margin-bottom:20px;
+    }
+    .card-header{
+      padding:12px 16px;
+      font-weight:700;
+      font-size:14px;
+      color:#fff;
+      background:linear-gradient(180deg, var(--brand-primary) 0%, var(--brand-dark) 100%);
+      border-bottom:1px solid var(--border);
+    }
+    .card-header .card-subtitle{
+      font-weight:400; font-size:11px; opacity:.85; margin-top:2px;
+    }
+    .card-body{ padding:16px; }
+
+    label{ display:block; font-size:12px; font-weight:600; margin:0 0 4px; color:#4B5563; }
+    label .required{ color:var(--danger); }
+    .required{ color:var(--danger); }
+    input[type=text], input[type=number], input[type=date], select, textarea{
+      width:100%;
+      max-width:100%;
+      min-width:0;
+      min-height:40px;
+      padding:9px 10px;
+      font-size:14px;
+      line-height:1.2;
+      box-sizing:border-box;
+      border:1px solid var(--border);
+      border-radius:6px;
+      background:#fff;
+      font-family:inherit;
+    }
+    textarea{ min-height:70px; resize:vertical; }
+    .row2{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+    .row2 > div{ min-width:0; }
+
+    /* ===== Field grid (12-column, mobile-first) ===== */
+    .field-grid{
+      display:grid;
+      grid-template-columns:repeat(12,1fr);
+      gap:14px 16px;
+    }
+    .field-grid .field{ grid-column:span 12; }
+    .field-grid .group-label{
+      grid-column:span 12;
+      font-size:12px; font-weight:700; color:var(--text);
+      text-transform:uppercase; letter-spacing:.03em;
+      margin-top:4px;
+    }
+
+    .radio-group{ display:flex; flex-wrap:wrap; gap:10px; margin-top:6px; }
+    .radio-group label{
+      display:flex; align-items:center; gap:6px;
+      font-weight:500; font-size:13px; margin:0;
+      border:1px solid var(--border); border-radius:6px; padding:7px 12px;
+      flex:0 1 auto;
+    }
+    .radio-group input{ width:auto; }
+
+    /* Checklist for longer, descriptive checkbox options (Warning Signs,
+       Severe Signs, water containers, etc.) — a vertical stack instead of
+       the compact horizontal pills, since these labels wrap to 1-2 lines. */
+    .checkbox-list{ display:flex; flex-direction:column; gap:8px; margin-top:6px; }
+    .checkbox-list label{
+      display:flex; align-items:flex-start; gap:8px;
+      font-size:13px; font-weight:500; line-height:1.4;
+      border:1px solid var(--border); border-radius:6px; padding:9px 12px;
+    }
+    .checkbox-list input{ width:auto; margin-top:2px; flex-shrink:0; }
+
+    @media (min-width: 600px){
+      .checkbox-list-grid{
+        display:grid;
+        grid-template-columns:1fr 1fr;
+        gap:8px 12px;
+      }
+    }
+
+    /* Tighter pairing for a question + its immediate follow-up field
+       (History of Travel/Place of Travel, Exposed/names) — smaller gap than
+       the surrounding .field-grid so these read as one connected unit. The
+       first column shrinks to its own content width rather than splitting
+       evenly, so the follow-up field sits close to the question — any
+       leftover row width ends up past the follow-up field on the right,
+       not as a gap between the two. */
+    .epi-tight-row{ display:grid; grid-template-columns:1fr; gap:8px; }
+    @media (min-width: 768px){
+      .epi-tight-row{ grid-template-columns:auto 1fr; gap:8px 16px; align-items:start; }
+      .epi-followup{ max-width:320px; }
+    }
+
+    #map{ height:220px; border-radius:8px; margin-top:8px; border:1px solid var(--border); }
+    .loc-btn{
+      width:100%; padding:11px; border:none; border-radius:6px;
+      background:linear-gradient(180deg, var(--brand-primary) 0%, var(--brand-dark) 100%);
+      color:#fff; font-weight:600; font-size:14px;
+      margin-top:8px; cursor:pointer;
+    }
+    .coords-readout{ font-size:12px; color:#6B7280; margin-top:6px; }
+
+    .submit-section{
+      background:#fff;
+      border:1px solid var(--border);
+      border-radius:10px;
+      padding:16px;
+    }
+    .submit-btn{
+      width:100%; padding:14px; border:none; border-radius:8px;
+      background:linear-gradient(180deg, var(--brand-primary) 0%, var(--brand-dark) 100%);
+      color:#fff; font-weight:700; font-size:15px;
+      cursor:pointer;
+    }
+    .submit-btn:disabled{ background:#9CA3AF; }
+    .status-msg{ text-align:center; font-size:13px; margin-top:8px; font-weight:600; }
+    .status-msg.error{ color:var(--danger); }
+    .status-msg.success{ color:var(--success); }
+
+    .success-banner{ text-align:center; padding-top:6px; }
+    .success-banner-check{
+      width:44px; height:44px; line-height:44px;
+      border-radius:50%;
+      background:var(--success);
+      color:#fff;
+      font-size:22px; font-weight:700;
+      margin:0 auto 10px;
+    }
+    .success-banner-text{ font-size:14px; color:var(--text); margin-bottom:14px; }
+    .success-banner-text span{ font-weight:700; color:var(--success); font-size:16px; }
+    .next-survey-btn{
+      background:linear-gradient(180deg, var(--brand-primary) 0%, var(--brand-dark) 100%);
+    }
+
+    .scout-dot{
+      transform-box:fill-box; transform-origin:center;
+      transition:filter .25s ease, fill .25s ease;
+    }
+    .header-logo:hover .scout-dot{
+      animation: scoutGlow .9s ease-in-out infinite;
+      filter:
+        drop-shadow(0 0 2px rgba(255,70,40,.95))
+        drop-shadow(0 0 6px rgba(255,70,40,.55))
+        drop-shadow(0 0 14px rgba(255,70,40,.18));
+    }
+    #scoutHighlight{ transition:none; transform-box:fill-box; transform-origin:center; }
+    #scoutPulse{ transform-box:view-box; transform-origin:401px 124px; }
+    #scoutPulse.animate{ animation: scoutPulse 1.6s cubic-bezier(0.25, 0.1, 0.25, 1); }
+    @keyframes scoutPulse{
+      0%{ transform:scale(0); opacity:1; filter:drop-shadow(0 0 0px rgba(255,62,19,.65)); }
+      15%{ opacity:1; }
+      50%{ opacity:.4; filter:drop-shadow(0 0 5px rgba(255,62,19,.28)); }
+      75%{ opacity:0; filter:drop-shadow(0 0 14px rgba(255,62,19,0)); }
+      100%{ transform:scale(25); opacity:0; }
+    }
+    #scoutHighlight.animate{ animation: scoutShine .55s ease-in-out; }
+    @keyframes scoutShine{
+      0%{ opacity:0; transform:translateX(-18px) rotate(-18deg); }
+      15%{ opacity:.15; } 40%{ opacity:1; } 65%{ opacity:.45; }
+      100%{ opacity:0; transform:translateX(22px) rotate(-18deg); }
+    }
+    @keyframes scoutGlow{
+      0%{ filter:drop-shadow(0 0 2px rgba(255,70,40,.7)) drop-shadow(0 0 5px rgba(255,70,40,.3)); }
+      50%{ filter:drop-shadow(0 0 4px rgba(255,70,40,1)) drop-shadow(0 0 10px rgba(255,70,40,.55)); }
+      100%{ filter:drop-shadow(0 0 2px rgba(255,70,40,.7)) drop-shadow(0 0 5px rgba(255,70,40,.3)); }
+    }
+    #scoutHalo{ transform-box:view-box; transform-origin:401px 124px; }
+    #scoutHalo.animate{ animation: scoutHaloGlow .4s steps ease-out; }
+    @keyframes scoutHaloGlow{
+      0%{ opacity:0; transform:scale(1); } 25%{ opacity:1; transform:scale(1.8); }
+      45%{ opacity:0; transform:scale(1); } 100%{ opacity:0; }
+    }
+    #scoutLetterGlow{ transform-box:view-box; transform-origin:401px 124px; }
+    #scoutLetterGlow.animate{ animation: scoutLetterGlowFlash .4s ease-out; }
+    @keyframes scoutLetterGlowFlash{
+      0%{ opacity:0; transform:scale(1); } 25%{ opacity:1; transform:scale(1.4); }
+      45%{ opacity:0; transform:scale(1); } 100%{ opacity:0; }
+    }
+
+    /* ===== Patient Information section — scoped layout ===============
+       Deliberately separate from the shared .field-grid/.span-* system
+       used by every other section, since this section's field widths are
+       intentional per-field rather than a reused utility grid, and none of
+       this should affect Sections 2–9. ==================================== */
+    .pi-group{ margin-bottom:36px; }
+    .pi-group:last-child{ margin-bottom:0; }
+    .pi-group-label{
+      font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.06em;
+      color:#6B7280; margin:0 0 12px; padding-bottom:6px; border-bottom:1px solid var(--border);
+    }
+    .pi-row{ display:grid; grid-template-columns:1fr; gap:12px; margin-bottom:12px; }
+    .pi-row:last-child{ margin-bottom:0; }
+
+    @media (min-width: 768px){
+      .pi-row-encounter{ max-width:280px; }
+      .pi-row-name{ grid-template-columns:1fr 1fr 1fr; }
+      .pi-row-dob-sex{ grid-template-columns:1.7fr 1fr; align-items:start; }
+      .pi-row-2col{ grid-template-columns:1fr 1fr; }
+    }
+
+    /* ===== Clinical Signs and Symptoms section — scoped layout ==========
+       Independent of .field-grid/.checkbox-list (used by other sections)
+       so this section's compacting doesn't affect Section 7's checklists. */
+    .cs-row{ margin-bottom:16px; }
+    .cs-row:last-child{ margin-bottom:0; }
+    .cs-row-onset{ max-width:100%; }
+
+    .cs-checklist{ display:flex; flex-direction:column; gap:6px; margin-top:6px; }
+    .cs-checklist label{
+      display:flex; align-items:flex-start; gap:8px;
+      font-size:13px; font-weight:500; line-height:1.4;
+      border:1px solid var(--border); border-radius:6px; padding:8px 10px;
+      cursor:pointer;
+    }
+    .cs-checklist label:hover{ background:#F9FAFB; }
+    .cs-checklist input{ width:auto; margin-top:2px; flex-shrink:0; cursor:pointer; }
+
+    /* Warning/Severe Signs: larger selectable cards with a bold title and a
+       separate muted description line, since the explanatory clinical text
+       matters and shouldn't be squeezed into a single compact row. */
+    .cs-desc-checklist{ display:flex; flex-direction:column; gap:10px; margin-top:6px; }
+    .cs-desc-checklist label{
+      display:flex; align-items:flex-start; gap:10px;
+      border:1px solid var(--border); border-radius:8px;
+      padding:14px 16px;
+      cursor:pointer;
+    }
+    .cs-desc-checklist label:hover{ background:#F9FAFB; }
+    .cs-desc-checklist input{ width:auto; margin-top:3px; flex-shrink:0; cursor:pointer; }
+    .cs-desc-checklist .cs-item-text{ display:flex; flex-direction:column; gap:3px; }
+    .cs-desc-checklist .cs-item-title{ font-size:14px; font-weight:600; color:var(--text); line-height:1.35; }
+    .cs-desc-checklist .cs-item-desc{ font-size:12.5px; font-weight:400; color:#6B7280; line-height:1.45; }
+    .cs-desc-checklist .cs-item-desc::first-letter{ text-transform:uppercase; }
+
+    @media (min-width: 768px){
+      .cs-row-onset{ max-width:280px; }
+    }
+    @media (min-width: 900px){
+      .cs-checklist-grid{
+        display:grid;
+        grid-template-columns:1fr 1fr;
+        gap:6px 12px;
+      }
+    }
+
+    /* ===== Responsive tiers ===== */
+    @media (max-width: 767px){
+      #map{ height:320px; }
+    }
+    @media (min-width: 768px){
+      .field-grid .span-4{ grid-column:span 6; }
+      .field-grid .span-6{ grid-column:span 6; }
+    }
+    @media (min-width: 900px){
+      .page{ padding-top:20px; }
+      header{ justify-content:flex-start; padding:20px 28px; }
+      header .header-logo{ width:120px; }
+      header h1{ font-size:18px; }
+      header p{ font-size:13px; }
+      .field-grid .span-4{ grid-column:span 4; }
+      .field-grid .span-6{ grid-column:span 6; }
+      #map{ height:380px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- Access-code gate. Shown before the form is usable; hidden once a valid
+     code is confirmed. The code itself is never in this file's source -- it
+     is typed once by the BHW and kept only in this browser (localStorage),
+     then checked by the server (doPost's "ping" action) on every screen
+     load and again on every real submission. -->
+<div id="accessGate" style="position:fixed;inset:0;z-index:10000;background:#F9FAFB;
+     display:flex;align-items:center;justify-content:center;padding:24px;">
+  <div style="max-width:360px;width:100%;text-align:center;">
+    <div style="font-size:15px;color:#1F2937;margin-bottom:14px;">
+      Enter the access code given by your City Health Office to use this form.
+    </div>
+    <input id="accessCodeInput" type="password" inputmode="text" autocomplete="off"
+           placeholder="Access code"
+           style="width:100%;padding:12px 14px;font-size:16px;border:1px solid #E5E7EB;
+                  border-radius:8px;box-sizing:border-box;margin-bottom:10px;">
+    <button id="accessCodeSubmit" type="button"
+            style="width:100%;padding:12px;font-size:15px;font-weight:600;color:#fff;
+                   background:#2C6A47;border:none;border-radius:8px;cursor:pointer;">
+      Continue
+    </button>
+    <div id="accessCodeMsg" style="margin-top:10px;font-size:13px;color:#8a1c17;min-height:18px;"></div>
+    <div style="margin-top:14px;font-size:12px;color:#6B7280;">
+      No signal right now? If this phone was already set up with the correct
+      code before, it will keep working offline — this check only blocks a
+      code that has never been confirmed on this device.
+    </div>
+  </div>
+</div>
+
+<div class="page" id="mainPage" style="display:none;">
+
+  <header>
+    <div class="header-logo" id="scoutLogo">
+      
+
+
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-40 -40 875 284" overflow="visible">
+  <defs>
+
+    <filter id="scoutGlow" x="-50%" y="-50%" width="200%" height="200%">
+
+        <feGaussianBlur stdDeviation="2.8" result="coloredBlur"/>
+
+        <feMerge>
+
+            <feMergeNode in="coloredBlur"/>
+
+            <feMergeNode in="SourceGraphic"/>
+
+        </feMerge>
+
+    </filter>
+
+    <radialGradient id="scoutPulseGradient" cx="50%" cy="50%" r="50%">
+        <stop offset="0%"  stop-color="#FF3E13" stop-opacity="0"/>
+        <stop offset="30%" stop-color="#FF3E13" stop-opacity="0"/>
+        <stop offset="75%" stop-color="#FF3E13" stop-opacity=".18"/>
+        <stop offset="90%" stop-color="#FF3E13" stop-opacity=".5"/>
+        <stop offset="100%" stop-color="#FF5A36" stop-opacity=".95"/>
+    </radialGradient>
+
+    <radialGradient id="scoutGlowHalo" cx="50%" cy="50%" r="50%">
+    <stop offset="0%"  stop-color="#FF3E13" stop-opacity="1"/>
+    <stop offset="40%" stop-color="#FF3E13" stop-opacity=".65"/>
+    <stop offset="100%" stop-color="#FF3E13" stop-opacity="0"/>
+    </radialGradient>
+
+  </defs>
+
+  
+
+  <path d="M 510.0,54.0 L 508.0,56.0 L 507.0,64.0 L 507.0,138.0 L 510.0,155.0 L 516.0,168.0 L 521.0,175.0 L 529.0,183.0 L 539.0,190.0 L 551.0,195.0 L 565.0,198.0 L 596.0,197.0 L 612.0,192.0 L 622.0,186.0 L 636.0,171.0 L 644.0,152.0 L 645.0,57.0 L 642.0,54.0 L 615.0,54.0 L 612.0,57.0 L 611.0,144.0 L 607.0,153.0 L 599.0,162.0 L 589.0,167.0 L 576.0,169.0 L 564.0,167.0 L 556.0,163.0 L 547.0,154.0 L 542.0,143.0 L 541.0,57.0 L 538.0,54.0 Z M 365.0,57.0 L 349.0,66.0 L 339.0,75.0 L 329.0,89.0 L 323.0,104.0 L 321.0,114.0 L 321.0,135.0 L 325.0,150.0 L 332.0,164.0 L 343.0,177.0 L 356.0,187.0 L 366.0,192.0 L 383.0,197.0 L 414.0,198.0 L 428.0,195.0 L 444.0,188.0 L 453.0,182.0 L 466.0,169.0 L 472.0,160.0 L 479.0,143.0 L 481.0,130.0 L 480.0,112.0 L 477.0,101.0 L 468.0,84.0 L 450.0,66.0 L 438.0,59.0 L 425.0,54.0 L 408.0,51.0 L 392.0,51.0 L 378.0,53.0 Z M 384.0,80.0 L 393.0,78.0 L 406.0,78.0 L 418.0,81.0 L 429.0,87.0 L 440.0,98.0 L 446.0,109.0 L 448.0,116.0 L 448.0,130.0 L 444.0,143.0 L 439.0,151.0 L 431.0,159.0 L 423.0,164.0 L 411.0,168.0 L 391.0,168.0 L 381.0,165.0 L 371.0,159.0 L 362.0,150.0 L 356.0,139.0 L 353.0,121.0 L 355.0,109.0 L 358.0,102.0 L 372.0,86.0 Z M 200.0,57.0 L 187.0,64.0 L 174.0,75.0 L 167.0,84.0 L 159.0,100.0 L 156.0,112.0 L 156.0,134.0 L 158.0,144.0 L 165.0,161.0 L 174.0,173.0 L 188.0,185.0 L 199.0,191.0 L 218.0,197.0 L 256.0,197.0 L 270.0,193.0 L 285.0,185.0 L 301.0,169.0 L 301.0,166.0 L 284.0,150.0 L 280.0,150.0 L 267.0,161.0 L 254.0,167.0 L 244.0,169.0 L 232.0,169.0 L 223.0,167.0 L 213.0,163.0 L 199.0,151.0 L 191.0,134.0 L 190.0,120.0 L 193.0,107.0 L 199.0,96.0 L 207.0,88.0 L 217.0,82.0 L 228.0,79.0 L 252.0,80.0 L 265.0,86.0 L 278.0,97.0 L 282.0,97.0 L 297.0,83.0 L 297.0,77.0 L 280.0,62.0 L 258.0,53.0 L 246.0,51.0 L 223.0,51.0 Z M 44.0,54.0 L 24.0,64.0 L 15.0,74.0 L 10.0,87.0 L 10.0,100.0 L 14.0,111.0 L 23.0,121.0 L 36.0,128.0 L 54.0,133.0 L 79.0,137.0 L 92.0,142.0 L 100.0,150.0 L 100.0,160.0 L 93.0,167.0 L 86.0,170.0 L 60.0,171.0 L 46.0,167.0 L 35.0,161.0 L 27.0,154.0 L 21.0,153.0 L 6.0,169.0 L 6.0,171.0 L 14.0,181.0 L 26.0,189.0 L 50.0,197.0 L 83.0,198.0 L 104.0,193.0 L 119.0,184.0 L 130.0,169.0 L 133.0,158.0 L 133.0,148.0 L 129.0,136.0 L 120.0,125.0 L 107.0,117.0 L 96.0,113.0 L 63.0,107.0 L 51.0,103.0 L 44.0,97.0 L 43.0,88.0 L 50.0,80.0 L 61.0,77.0 L 75.0,77.0 L 94.0,82.0 L 109.0,92.0 L 114.0,93.0 L 128.0,77.0 L 129.0,73.0 L 124.0,67.0 L 115.0,61.0 L 90.0,52.0 L 61.0,51.0 Z M 707.0,6.0 L 703.0,10.0 L 703.0,52.0 L 701.0,54.0 L 678.0,54.0 L 674.0,60.0 L 674.0,72.0 L 677.0,78.0 L 701.0,79.0 L 703.0,81.0 L 703.0,153.0 L 707.0,168.0 L 712.0,177.0 L 721.0,187.0 L 735.0,195.0 L 746.0,198.0 L 769.0,198.0 L 781.0,195.0 L 789.0,190.0 L 787.0,175.0 L 785.0,169.0 L 782.0,166.0 L 776.0,166.0 L 765.0,169.0 L 754.0,168.0 L 746.0,164.0 L 739.0,154.0 L 737.0,146.0 L 738.0,79.0 L 780.0,79.0 L 784.0,76.0 L 785.0,73.0 L 785.0,58.0 L 781.0,54.0 L 739.0,54.0 L 737.0,52.0 L 737.0,10.0 L 732.0,6.0 Z" fill="#F4F3EE" fill-rule="evenodd"/>
+
+<clipPath id="wordmarkClip" clipPathUnits="userSpaceOnUse">
+    <path d="M 510.0,54.0 L 508.0,56.0 L 507.0,64.0 L 507.0,138.0 L 510.0,155.0 L 516.0,168.0 L 521.0,175.0 L 529.0,183.0 L 539.0,190.0 L 551.0,195.0 L 565.0,198.0 L 596.0,197.0 L 612.0,192.0 L 622.0,186.0 L 636.0,171.0 L 644.0,152.0 L 645.0,57.0 L 642.0,54.0 L 615.0,54.0 L 612.0,57.0 L 611.0,144.0 L 607.0,153.0 L 599.0,162.0 L 589.0,167.0 L 576.0,169.0 L 564.0,167.0 L 556.0,163.0 L 547.0,154.0 L 542.0,143.0 L 541.0,57.0 L 538.0,54.0 Z M 365.0,57.0 L 349.0,66.0 L 339.0,75.0 L 329.0,89.0 L 323.0,104.0 L 321.0,114.0 L 321.0,135.0 L 325.0,150.0 L 332.0,164.0 L 343.0,177.0 L 356.0,187.0 L 366.0,192.0 L 383.0,197.0 L 414.0,198.0 L 428.0,195.0 L 444.0,188.0 L 453.0,182.0 L 466.0,169.0 L 472.0,160.0 L 479.0,143.0 L 481.0,130.0 L 480.0,112.0 L 477.0,101.0 L 468.0,84.0 L 450.0,66.0 L 438.0,59.0 L 425.0,54.0 L 408.0,51.0 L 392.0,51.0 L 378.0,53.0 Z M 384.0,80.0 L 393.0,78.0 L 406.0,78.0 L 418.0,81.0 L 429.0,87.0 L 440.0,98.0 L 446.0,109.0 L 448.0,116.0 L 448.0,130.0 L 444.0,143.0 L 439.0,151.0 L 431.0,159.0 L 423.0,164.0 L 411.0,168.0 L 391.0,168.0 L 381.0,165.0 L 371.0,159.0 L 362.0,150.0 L 356.0,139.0 L 353.0,121.0 L 355.0,109.0 L 358.0,102.0 L 372.0,86.0 Z" fill-rule="evenodd"/>
+</clipPath>
+
+<circle
+    id="scoutHalo"
+    cx="401"
+    cy="124"
+    r="34"
+    fill="url(#scoutGlowHalo)"
+    opacity="0"
+/>
+
+  <path class="scout-dot" d="M 391.0,100.0 L 385.0,103.0 L 377.0,113.0 L 375.0,122.0 L 377.0,134.0 L 386.0,145.0 L 392.0,148.0 L 410.0,148.0 L 417.0,144.0 L 425.0,134.0 L 427.0,127.0 L 426.0,115.0 L 422.0,108.0 L 411.0,100.0 Z" fill="#FF3E13" fill-rule="evenodd"/>
+
+<ellipse
+    id="scoutHighlight"
+    cx="392"
+    cy="122"
+    rx="7"
+    ry="20"
+    fill="#FFFFFF"
+    opacity="0"
+/>
+
+<circle
+    id="scoutPulse"
+    cx="401"
+    cy="124"
+    r="18"
+    fill="url(#scoutPulseGradient)"
+    opacity="0"
+    filter="url(#scoutGlow)"
+/>
+
+<circle
+    id="scoutLetterGlow"
+    cx="401"
+    cy="124"
+    r="45"
+    fill="url(#scoutGlowHalo)"
+    clip-path="url(#wordmarkClip)"
+    opacity="0"
+    style="mix-blend-mode:multiply"
+/>
+
+
+
+    </div>
+    <div class="header-text">
+      <h1>Dengue Case Report</h1>
+      <p>City Health Office - Ligao City</p>
+    </div>
+  </header>
+
+  <form id="caseForm">
+
+    <!-- SECTION 1: Patient Info & Location -->
+    <div class="card">
+      <div class="card-header">Patient Information</div>
+      <div class="card-body">
+
+          <div class="pi-group">
+            <div class="pi-group-label">Encounter</div>
+            <div class="pi-row pi-row-encounter">
+              <div>
+                <label>Date patient was seen <span class="required">*</span></label>
+                <input type="date" id="Date patient was seen" required>
+              </div>
+            </div>
+          </div>
+
+          <div class="pi-group">
+            <div class="pi-group-label">Patient</div>
+
+            <div class="pi-row pi-row-name">
+              <div>
+                <label>Last Name <span class="required">*</span></label>
+                <input type="text" id="Last Name" placeholder="Last Name" required>
+              </div>
+              <div>
+                <label>First Name <span class="required">*</span></label>
+                <input type="text" id="First Name" placeholder="First Name" required>
+              </div>
+              <div>
+                <label>Middle Name <span class="required">*</span></label>
+                <input type="text" id="Middle Name" placeholder="Middle Name" required>
+              </div>
+            </div>
+
+            <div class="pi-row pi-row-dob-sex">
+              <div>
+                <label>Date of Birth <span class="required">*</span></label>
+                <input type="date" id="Date of Birth" required>
+              </div>
+              <div>
+                <label>Sex <span class="required">*</span></label>
+                <div class="radio-group">
+                  <label><input type="radio" name="Sex" value="M" required> Male</label>
+                  <label><input type="radio" name="Sex" value="F" required> Female</label>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="pi-group">
+            <div class="pi-group-label">Residence / Epidemiologic Information</div>
+
+            <div class="pi-row pi-row-2col">
+              <div>
+                <label>Barangay <span class="required">*</span></label>
+                <select id="Barangay" required>
+                  <option value="">Select Barangay</option>
+                </select>
+              </div>
+              <div>
+                <label>Purok <span class="required">*</span></label>
+                <input type="text" id="Purok" required>
+              </div>
+            </div>
+
+            <div class="pi-row pi-row-2col">
+              <div>
+                <label>Home Address</label>
+                <input type="text" id="Home Address">
+              </div>
+              <div>
+                <label>School / Work Address <span class="required">*</span></label>
+                <input type="text" id="School / Work Address" required>
+              </div>
+            </div>
+
+            <div class="pi-row">
+              <div>
+                <label>Was the Patient hospitalized? <span class="required">*</span></label>
+                <div class="radio-group">
+                  <label><input type="radio" name="hospitalized" value="Yes" required> Yes</label>
+                  <label><input type="radio" name="hospitalized" value="No" required> No</label>
+                </div>
+              </div>
+            </div>
+          </div>
+
+      </div>
+    </div>
+
+    <!-- SECTION 2: Hospital Course (shown only if hospitalized = Yes) -->
+    <div class="card" id="section2" style="display:none;">
+      <div class="card-header">Hospital Course</div>
+      <div class="card-body">
+        <div class="field-grid">
+          <div class="field span-6">
+            <label>Name of Hospital</label>
+            <input type="text" id="Name of Hospital">
+          </div>
+          <div class="field span-6"></div>
+          <div class="field span-6">
+            <label>Date of Hospitalization</label>
+            <input type="date" id="Date of Hospitalization">
+          </div>
+          <div class="field span-6">
+            <label>Date of Discharge</label>
+            <input type="date" id="Date of Discharge">
+          </div>
+          <div class="field span-12">
+            <label>Final Diagnosis as per Hospital</label>
+            <input type="text" id="Final Diagnosis as per Hospital">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SECTION 3: Consultation (shown only if hospitalized = No) -->
+    <div class="card" id="section3" style="display:none;">
+      <div class="card-header">Consultation</div>
+      <div class="card-body">
+        <div class="field-grid">
+          <div class="field span-6">
+            <label>Consultation Done?</label>
+            <div class="radio-group">
+              <label><input type="radio" name="Consultation Done?" value="Yes"> Yes</label>
+              <label><input type="radio" name="Consultation Done?" value="No"> No</label>
+            </div>
+          </div>
+          <div class="field span-6">
+            <label>Date of consultation</label>
+            <input type="date" id="Date of consultation">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SECTION 4: Clinical Signs and Symptoms (both branches converge here) -->
+    <div class="card">
+      <div class="card-header">Clinical Signs and Symptoms</div>
+      <div class="card-body">
+
+        <div class="cs-row cs-row-onset">
+          <div>
+            <label>Date of Illness Onset</label>
+            <input type="date" id="Date of Illness Onset">
+          </div>
+        </div>
+
+        <div class="cs-row">
+          <div>
+            <label>Presence of fever? <span class="required">*</span></label>
+            <div class="radio-group" id="feverGroup"></div>
+          </div>
+        </div>
+
+        <div class="cs-row">
+          <div>
+            <label>Signs and Symptoms <span class="required">*</span></label>
+            <div class="cs-checklist cs-checklist-grid" id="signsGroup"></div>
+          </div>
+        </div>
+
+        <div class="cs-row">
+          <div>
+            <label>Warning Signs <span class="required">*</span></label>
+            <div class="cs-desc-checklist" id="warningGroup"></div>
+          </div>
+        </div>
+
+        <div class="cs-row">
+          <div>
+            <label>Severe Signs <span class="required">*</span></label>
+            <div class="cs-desc-checklist" id="severeGroup"></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- SECTION 5: Laboratory Information -->
+    <div class="card">
+      <div class="card-header">Laboratory Information<div class="card-subtitle">Laboratories Done and Results</div></div>
+      <div class="card-body">
+        <div class="field-grid">
+          <div class="field span-6">
+            <label>Was a Complete Blood Count with Platelet Count Done?</label>
+            <div class="radio-group">
+              <label><input type="radio" name="Complete Blood Count with Platelet Count" value="Yes"> Yes</label>
+              <label><input type="radio" name="Complete Blood Count with Platelet Count" value="No"> No</label>
+            </div>
+          </div>
+          <div class="field span-6"></div>
+
+          <div class="field span-6" id="cbcPlateletField" style="display:none;">
+            <label>Latest Platelet Count</label>
+            <input type="number" inputmode="decimal" min="0" step="any" id="Latest Platelet Count if available">
+          </div>
+          <div class="field span-6" id="cbcHematocritField" style="display:none;">
+            <label>Latest Hematocrit</label>
+            <input type="number" inputmode="decimal" min="0" max="100" step="any" id="Latest Hematocrit if Available">
+          </div>
+
+          <div class="field span-12" style="border-top:1px solid var(--border); margin-top:8px; padding-top:20px;"></div>
+
+          <div class="field span-6">
+            <label>Dengue NS1 Result <span class="required">*</span></label>
+            <div class="radio-group" id="ns1Group"></div>
+          </div>
+          <div class="field span-6">
+            <label>Dengue IgG/IgM Result <span class="required">*</span></label>
+            <div class="radio-group" id="iggIgmGroup"></div>
+          </div>
+
+          <div class="field span-12" style="border-top:1px solid var(--border); margin-top:8px; padding-top:20px;"></div>
+
+          <div class="field span-6">
+            <label>Confirmatory Laboratories Done <span class="required">*</span></label>
+            <div class="radio-group" id="confirmatoryGroup"></div>
+          </div>
+          <div class="field span-6" id="confirmatoryPositiveField" style="display:none;">
+            <label>Any Confirmatory Result came back positive? <span class="required">*</span></label>
+            <div class="radio-group" id="confirmatoryPositiveGroup"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SECTION 6: Outcome -->
+    <div class="card">
+      <div class="card-header">Outcome</div>
+      <div class="card-body">
+        <div class="field-grid">
+          <div class="field span-12">
+            <label>Medications taken</label>
+            <textarea id="Medications taken"></textarea>
+          </div>
+          <div class="field span-12">
+            <label>Outcome <span class="required">*</span></label>
+            <div class="radio-group">
+              <label><input type="radio" name="Outcome" value="Recovered" required> Recovered</label>
+              <label><input type="radio" name="Outcome" value="Improved" required> Improved</label>
+              <label><input type="radio" name="Outcome" value="No improvement" required> No improvement</label>
+              <label><input type="radio" name="Outcome" value="Expired" required> Expired</label>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SECTION 7: Epidemiologic Information -->
+    <div class="card">
+      <div class="card-header">Epidemiologic Information</div>
+      <div class="card-body">
+        <div class="field-grid">
+          <div class="field span-12">
+            <div class="epi-tight-row">
+              <div>
+                <label>History of Travel in the past 2 weeks <span class="required">*</span></label>
+                <div class="radio-group">
+                  <label><input type="radio" name="History of Travel in the past 2 weeks" value="Yes" required> Yes</label>
+                  <label><input type="radio" name="History of Travel in the past 2 weeks" value="No" required> No</label>
+                </div>
+              </div>
+              <div id="placeOfTravelField" class="epi-followup" style="display:none;">
+                <label>Place of Recent Travel</label>
+                <input type="text" id="Place of Recent Travel">
+              </div>
+            </div>
+          </div>
+
+          <div class="field span-12">
+            <div class="epi-tight-row">
+              <div>
+                <label>Exposed to person of similar manifestation</label>
+                <div class="radio-group">
+                  <label><input type="radio" name="Exposed to person of similar manifestation" value="Yes"> Yes</label>
+                  <label><input type="radio" name="Exposed to person of similar manifestation" value="No"> No</label>
+                </div>
+              </div>
+              <div id="exposedNamesField" class="epi-followup" style="display:none;">
+                <label>If exposed to another person, what are their names?</label>
+                <textarea id="If exposed to another person, what are their names?"></textarea>
+              </div>
+            </div>
+          </div>
+
+          <div class="field span-12">
+            <label>Presence of animals/vectors around house or within the neighborhood 50 meters from the house</label>
+            <div class="checkbox-list checkbox-list-grid" id="animalsGroup"></div>
+          </div>
+
+          <div class="field span-12">
+            <label>Water Containers in the House</label>
+            <div class="checkbox-list checkbox-list-grid" id="waterInGroup"></div>
+          </div>
+          <div class="field span-12" id="waterInOthersField" style="display:none;">
+            <label>Others ( Please specify):</label>
+            <input type="text" id="Others ( Please specify):">
+          </div>
+
+          <div class="field span-12">
+            <label>Water Containers outside the house or within 10 meters in the neighborhood</label>
+            <div class="checkbox-list checkbox-list-grid" id="waterOutGroup"></div>
+          </div>
+          <div class="field span-12" id="waterOutOthersField" style="display:none;">
+            <label>Others (Please specify):</label>
+            <input type="text" id="Others (Please specify):">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SECTION 8: Residence Location -->
+    <div class="card">
+      <div class="card-header">Residence Location</div>
+      <div class="card-body">
+        <div id="map"></div>
+        <button type="button" class="loc-btn" id="locBtn">📍 Use Current Location</button>
+        <div class="coords-readout" id="coordsReadout">No location captured yet. Tap the button, then click/tap the map to place the pin at the exact residence if needed.</div>
+      </div>
+    </div>
+
+    <!-- SECTION 9: Sign-off -->
+    <div class="card">
+      <div class="card-header">Sign-off</div>
+      <div class="card-body">
+        <div class="field-grid">
+          <div class="field span-12">
+            <label>Investigated By <span class="required">*</span></label>
+            <input type="text" id="Investigated By" required>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SUBMIT -->
+    <div class="submit-section">
+      <button type="button" class="submit-btn" id="submitBtn">Submit Case Report</button>
+      <div class="status-msg" id="statusMsg"></div>
+
+      <div id="successBanner" class="success-banner" style="display:none;">
+        <div class="success-banner-check">✓</div>
+        <div class="success-banner-text">
+          <span id="successHeadline">Case report submitted successfully.</span><br>
+          Case Number: <span id="assignedCaseNumber">—</span><br>
+          <span id="sessionCount">0</span> case(s) reported this session.
+        </div>
+        <button type="button" class="submit-btn next-survey-btn" id="nextCaseBtn">Submit Another Case</button>
+      </div>
+    </div>
+
+  </form>
+
+</div>
+
+  <script>
+const ligaoBarangayGeoJSON = 
+{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[123.41478729248058,13.143340110778922],[123.43218994140636,13.129739761352539],[123.46058654785168,13.124919891357479],[123.4681167602539,13.115579605102482],[123.4339599609375,13.103030204772892],[123.39492034912132,13.115099906921387],[123.41478729248058,13.143340110778922]]]},"properties":{"name":"Abella"}},{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[123.47212982177734,13.219539642334098],[123.4787368774414,13.206089973449707],[123.46768951416016,13.190190315246696],[123.45604705810547,13.196660041809139],[123.47212982177734,13.219539642334098]]]},"properties":{"name":"Allang"}},{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[123.64443206787121,13.298959732055721],[123.62776184082031,13.28627967834484],[123.60053253173851,13.308639526367244],[123.58719635009777,13.308910369873047],[123.59967041015625,13.316340446472225],[123.64443206787121,13.298959732055721]]]},"properties":{"name":"Amtic"}},{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[123.46916961669933,13.13057994842535],[123.47337341308605,13.117569923400936],[123.4681167602539,13.115579605102482],[123.46058654785168,13.124919891357479],[123.4620819091798,13.129170417785758],[123.46916961669933,13.13057994842535]]]},"properties":{"name":"Bacong"}},{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[123.54292297363281,13.25529956817627],[123.54238891601574,13.248200416564998],[123.53099060058605,13.246809959411621],[123.52960205078136,13.246660232543945],[123.53604888916016,13.253439903259277],[123.54292297363281,13.25529956817627]]]},"properties":{"name":"Bagumbayan"}},{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[123.4961929321289,13.135530471801815],[123.47337341308605,13.117569923400936],[123.46916961669933,13.13057994842535],[123.48246765136741,13.15065956115734],[123.4961929321289,13.135530471801815]]]},"properties":{"name":"Balanac"}},{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[123.62776184082031,13.28627967834484],[123.64443206787121,13.298959732055721],[123.68466949462902,13.254059791564941],[123.63314056396484,13.278440475463867],[123.6243667602539,13.271920204162711],[123.60485076904297,13.275050163269157],[123.62776184082031,13.28627967834484]]]},"properties":{"name":"Baligang"}},{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[123.5643005371096,13.2814302444458],[123.56716156005882,13.280520439148006],[123.57144927978516,13.269579887390137],[123.55856323242188,13.274169921875057],[123.5643005371096,13.2814302444458]]]},"properties":{"name":"Barayong"}},{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[123.59857940673828,13.289299964904899],[123.60485076904297,13.275050163269157],[123.60073089599632,13.267889976501579],[123.59078979492188,13.276269912719783],[123.59857940673828,13.289299964904899]]]},"properties":{"name":"Basag"}},{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[123.58519744873047,13.258879661560115],[123.57026672363293,13.244210243225154],[123.56228637695312,13.250909805297908],[123.55829620361328,13.254309654235897],[123.57386779785168,13.263680458068904],[123.58519744873047,13.258879661560115]]]},"properties":{"name":"Batang"}},{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[123.56228637695312,13.250909805297908],[123.55593872070324,13.245169639587516],[123.54949188232433,13.24594974517828],[123.55829620361328,13.254309654235897],[123.56228637695312,13.250909805297908]]]},"properties":{"name":"Bay"}},{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[123.58711242675781,13.25714015960699],[123.59748077392601,13.247110366821346],[123.58003997802734,13.23126029968256],[123.57026672363293,13.244210243225154],[123.58519744873047,13.258879661560115],[123.58711242675781,13.25714015960699]]]},"properties":{"name":"Binanowan"}},{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[123.53604888916016,13.253439903259277],[123.52960205078136,13.246660232543945],[123.52194976806663,13.239290237426815],[123.5160598754884,13.249739646911735],[123.52438354492188,13.258669853210392],[123.53604888916016,13.253439903259277]]]},"properties":{"name":"Binatagan"}},{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[123.5160598754884,13.249739646911735],[123.52194976806663,13.239290237426815],[123.512939453125,13.237489700317383],[123.50939178466808,13.242670059204102],[123.5160598754884,13.249739646911735]]]},"properties":{"name":"Bobonsuran"}},{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[123.56276702880882,13.237010002136287],[123.57074737548828,13.223070144653377],[123.5651092529298,13.216179847717342],[123.54332733154308,13.230600357055607],[123.54971313476562,13.238800048828125],[123.56276702880882,13.237010002136287]]]},"properties":{"name":"Bonga"}},{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[123.51087188720703,13.197879791259766],[123.51265716552746,13.188249588012638],[123.49687957763672,13.170430183410645],[123.48246765136741,13.15065956115734],[123.47090911865246,13.16261959075922],[123.46988677978538,13.180069923400879],[123.48741149902344,13.187140464782772],[123.51087188720703,13.197879791259766]]]},"properties":{"name":"Busac"}},{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[123.60053253173851,13.308639526367244],[123.58577728271484,13.301489830017033],[123.56716156005882,13.280520439148006],[123.5643005371096,13.2814302444458],[123.55419921875011,13.286129951477164],[123.58719635009777,13.308910369873047],[123.60053253173851,13.308639526367244]]]},"properties":{"name":"Busay"}},{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[123.35620117187523,13.065279960632324],[123.37110137939464,13.036100387573356],[123.34722900390625,13.01576042175293],[123.33379364013672,13.042949676513786],[123.35620117187523,13.065279960632324]]]},"properties":{"name":"Cabarian"}},{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[123.54949188232433,13.24594974517828],[123.54971313476562,13.238800048828125],[123.54251098632812,13.239729881286621],[123.54229736328125,13.24578952789318],[123.54949188232433,13.24594974517828]]]},"properties":{"name":"Calzada"}},{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[123.33379364013672,13.042949676513786],[123.34722900390625,13.01576042175293],[123.31890106201172,13.0075101852417],[123.3077392578125,13.023429870605469],[123.33379364013672,13.042949676513786]]]},"properties":{"name":"Catburawan"}},{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[123.52194976806663,13.239290237426815],[123.52645874023438,13.232179641723633],[123.52591705322266,13.229249954223746],[123.51744079589855,13.230779647827205],[123.512939453125,13.237489700317383],[123.52194976806663,13.239290237426815]]]},"properties":{"name":"Cavasi"}},{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[123.48224639892578,13.223540306091309],[123.4847869873048,13.207489967346135],[123.4852523803711,13.202919960021916],[123.4787368774414,13.206089973449707],[123.47212982177734,13.219539642334098],[123.48224639892578,13.223540306091309]]]},"properties":{"name":"Culliat"}},{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[123.54971313476562,13.238800048828125],[123.54332733154308,13.230600357055607],[123.5431137084961,13.23064994812023],[123.54251098632812,13.239729881286621],[123.54971313476562,13.238800048828125]]]},"properties":{"name":"Dunao"}},{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[123.45722198486328,13.187210083007926],[123.45966339111328,13.181090354919547],[123.45970153808594,13.171609878540153],[123.43742370605469,13.14556026458746],[123.4301528930664,13.150790214538631],[123.45722198486328,13.187210083007926]]]},"properties":{"name":"Francia"}},{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[123.54289245605469,13.267709732055721],[123.54292297363281,13.25529956817627],[123.53604888916016,13.253439903259277],[123.52438354492188,13.258669853210392],[123.53740692138695,13.269869804382438],[123.54289245605469,13.267709732055721]]]},"properties":{"name":"Guilid"}},{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[123.58577728271484,13.301489830017033],[123.59857940673828,13.289299964904899],[123.59078979492188,13.276269912719783],[123.57775115966797,13.267310142517204],[123.57144927978516,13.269579887390137],[123.56716156005882,13.280520439148006],[123.58577728271484,13.301489830017033]]]},"properties":{"name":"Herrera"}},{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[123.56228637695312,13.250909805297908],[123.57026672363293,13.244210243225154],[123.56556701660156,13.240440368652457],[123.55593872070324,13.245169639587516],[123.56228637695312,13.250909805297908]]]},"properties":{"name":"Layon"}},{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[123.52278137207043,13.217169761657658],[123.54798889160156,13.197150230407658],[123.52837371826172,13.178270339965877],[123.51265716552746,13.188249588012638],[123.51087188720703,13.197879791259766],[123.51206970214855,13.208649635314885],[123.52278137207043,13.217169761657658]]]},"properties":{"name":"Macalidong"}},{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[123.55419921875011,13.286129951477164],[123.5643005371096,13.2814302444458],[123.55856323242188,13.274169921875057],[123.55181884765625,13.264530181884822],[123.54289245605469,13.267709732055721],[123.53740692138695,13.269869804382438],[123.55419921875011,13.286129951477164]]]},"properties":{"name":"Mahaba"}},{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[123.45970153808594,13.171609878540153],[123.47090911865246,13.16261959075922],[123.4563217163086,13.141920089721737],[123.43742370605469,13.14556026458746],[123.45970153808594,13.171609878540153]]]},"properties":{"name":"Malama"}},{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[123.39492034912132,13.115099906921387],[123.4339599609375,13.103030204772892],[123.39346313476574,13.087459564208984],[123.39170837402355,13.03339004516613],[123.37110137939464,13.036100387573356],[123.35620117187523,13.065279960632324],[123.39492034912132,13.115099906921387]]]},"properties":{"name":"Maonon"}},{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[123.6243667602539,13.271920204162711],[123.59748077392601,13.247110366821346],[123.58711242675781,13.25714015960699],[123.60073089599632,13.267889976501579],[123.60485076904297,13.275050163269157],[123.6243667602539,13.271920204162711]]]},"properties":{"name":"Nabonton"}},{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[123.60073089599632,13.267889976501579],[123.58711242675781,13.25714015960699],[123.58519744873047,13.258879661560115],[123.57386779785168,13.263680458068904],[123.57775115966797,13.267310142517204],[123.59078979492188,13.276269912719783],[123.60073089599632,13.267889976501579]]]},"properties":{"name":"Nasisi"}},{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[123.52837371826172,13.178270339965877],[123.51284027099621,13.153900146484375],[123.49687957763672,13.170430183410645],[123.51265716552746,13.188249588012638],[123.52837371826172,13.178270339965877]]]},"properties":{"name":"Oma-Oma"}},{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[123.4852523803711,13.202919960021916],[123.48741149902344,13.187140464782772],[123.46988677978538,13.180069923400879],[123.46768951416016,13.190190315246696],[123.4787368774414,13.206089973449707],[123.4852523803711,13.202919960021916]]]},"properties":{"name":"Palapas"}},{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[123.5431137084961,13.23064994812023],[123.5400619506836,13.224060058593693],[123.52980804443371,13.228759765625057],[123.5431137084961,13.23064994812023]]]},"properties":{"name":"Pandan"}},{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[123.45604705810547,13.196660041809139],[123.46768951416016,13.190190315246696],[123.46988677978538,13.180069923400879],[123.45966339111328,13.181090354919547],[123.45722198486328,13.187210083007926],[123.45604705810547,13.196660041809139]]]},"properties":{"name":"Paulba"}},{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[123.57026672363293,13.244210243225154],[123.58003997802734,13.23126029968256],[123.57074737548828,13.223070144653377],[123.56276702880882,13.237010002136287],[123.56556701660156,13.240440368652457],[123.57026672363293,13.244210243225154]]]},"properties":{"name":"Paulog"}},{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[123.54332733154308,13.230600357055607],[123.5651092529298,13.216179847717342],[123.5550537109375,13.205149650573787],[123.5400619506836,13.224060058593693],[123.5431137084961,13.23064994812023],[123.54332733154308,13.230600357055607]]]},"properties":{"name":"Pinamaniquian"}},{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[123.57144927978516,13.269579887390137],[123.57775115966797,13.267310142517204],[123.57386779785168,13.263680458068904],[123.55829620361328,13.254309654235897],[123.55181884765625,13.264530181884822],[123.55856323242188,13.274169921875057],[123.57144927978516,13.269579887390137]]]},"properties":{"name":"Pinit"}},{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[123.52591705322266,13.229249954223746],[123.52883148193371,13.22782993316656],[123.52533721923828,13.220370292663574],[123.51744079589855,13.230779647827205],[123.52591705322266,13.229249954223746]]]},"properties":{"name":"Ranao-Ranao"}},{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[123.43742370605469,13.14556026458746],[123.4563217163086,13.141920089721737],[123.4620819091798,13.129170417785758],[123.46058654785168,13.124919891357479],[123.43218994140636,13.129739761352539],[123.41478729248058,13.143340110778922],[123.4301528930664,13.150790214538631],[123.43742370605469,13.14556026458746]]]},"properties":{"name":"San Vicente"}},{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[123.54238891601574,13.248200416564998],[123.54229736328125,13.24578952789318],[123.54251098632812,13.239729881286621],[123.53479766845714,13.236310005188045],[123.53099060058605,13.246809959411621],[123.54238891601574,13.248200416564998]]]},"properties":{"name":"Santa Cruz"}},{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[123.54251098632812,13.239729881286621],[123.5431137084961,13.23064994812023],[123.52980804443371,13.228759765625057],[123.52883148193371,13.22782993316656],[123.52591705322266,13.229249954223746],[123.52645874023438,13.232179641723633],[123.53479766845714,13.236310005188045],[123.54251098632812,13.239729881286621]]]},"properties":{"name":"Tagpo"}},{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[123.60053253173851,13.308639526367244],[123.62776184082031,13.28627967834484],[123.60485076904297,13.275050163269157],[123.59857940673828,13.289299964904899],[123.58577728271484,13.301489830017033],[123.60053253173851,13.308639526367244]]]},"properties":{"name":"Tambo"}},{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[123.46988677978538,13.180069923400879],[123.47090911865246,13.16261959075922],[123.45970153808594,13.171609878540153],[123.45966339111328,13.181090354919547],[123.46988677978538,13.180069923400879]]]},"properties":{"name":"Tandarura"}},{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[123.52980804443371,13.228759765625057],[123.5400619506836,13.224060058593693],[123.5550537109375,13.205149650573787],[123.54798889160156,13.197150230407658],[123.52278137207043,13.217169761657658],[123.52533721923828,13.220370292663574],[123.52883148193371,13.22782993316656],[123.52980804443371,13.228759765625057]]]},"properties":{"name":"Tastas"}},{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[123.55181884765625,13.264530181884822],[123.55829620361328,13.254309654235897],[123.54949188232433,13.24594974517828],[123.54229736328125,13.24578952789318],[123.54238891601574,13.248200416564998],[123.54292297363281,13.25529956817627],[123.54289245605469,13.267709732055721],[123.55181884765625,13.264530181884822]]]},"properties":{"name":"Tinago"}},{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[123.50939178466808,13.242670059204102],[123.512939453125,13.237489700317383],[123.51744079589855,13.230779647827205],[123.52533721923828,13.220370292663574],[123.52278137207043,13.217169761657658],[123.51206970214855,13.208649635314885],[123.50209045410156,13.21912956237793],[123.49285125732422,13.230349540710506],[123.50939178466808,13.242670059204102]]]},"properties":{"name":"Tinampo"}},{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[123.48246765136741,13.15065956115734],[123.46916961669933,13.13057994842535],[123.4620819091798,13.129170417785758],[123.4563217163086,13.141920089721737],[123.47090911865246,13.16261959075922],[123.48246765136741,13.15065956115734]]]},"properties":{"name":"Tiongson"}},{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[123.53099060058605,13.246809959411621],[123.53479766845714,13.236310005188045],[123.52645874023438,13.232179641723633],[123.52194976806663,13.239290237426815],[123.52960205078136,13.246660232543945],[123.53099060058605,13.246809959411621]]]},"properties":{"name":"Tomolin"}},{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[123.55593872070324,13.245169639587516],[123.56556701660156,13.240440368652457],[123.56276702880882,13.237010002136287],[123.54971313476562,13.238800048828125],[123.54949188232433,13.24594974517828],[123.55593872070324,13.245169639587516]]]},"properties":{"name":"Tuburan"}},{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[123.49285125732422,13.230349540710506],[123.50209045410156,13.21912956237793],[123.4847869873048,13.207489967346135],[123.48224639892578,13.223540306091309],[123.49285125732422,13.230349540710506]]]},"properties":{"name":"Tula-Tula Grande"}},{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[123.51206970214855,13.208649635314885],[123.51087188720703,13.197879791259766],[123.48741149902344,13.187140464782772],[123.4852523803711,13.202919960021916],[123.4847869873048,13.207489967346135],[123.50209045410156,13.21912956237793],[123.51206970214855,13.208649635314885]]]},"properties":{"name":"Tula-Tula Peque\u00f1o"}},{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[123.49687957763672,13.170430183410645],[123.51284027099621,13.153900146484375],[123.4961929321289,13.135530471801815],[123.48246765136741,13.15065956115734],[123.49687957763672,13.170430183410645]]]},"properties":{"name":"Tupas"}}]}
+;
+</script>
+
+<script>
+  // ---- Option-group builders ----
+  function buildRadioGroup(containerId, name, options, required){
+    const el = document.getElementById(containerId);
+    el.innerHTML = options.map(opt =>
+      '<label><input type="radio" name="'+name+'" value="'+opt.replace(/"/g,'&quot;')+'"'+(required?' required':'')+'> '+opt+'</label>'
+    ).join('');
+  }
+
+  function buildCheckboxList(containerId, name, options){
+    const el = document.getElementById(containerId);
+    el.innerHTML = options.map(opt =>
+      '<label><input type="checkbox" name="'+name+'" value="'+opt.replace(/"/g,'&quot;')+'"> '+opt+'</label>'
+    ).join('');
+  }
+
+  // Splits "Title (description text)" into its two parts for display only —
+  // handles the one option with nested parentheses (Severe Plasma Leakage)
+  // by taking everything between the FIRST "(" and the LAST ")" as the
+  // description, which is safe here since each option has exactly one
+  // outer parenthetical wrapping the whole explanatory text.
+  function splitTitleDescription(text){
+    const firstParen = text.indexOf('(');
+    if(firstParen === -1) return { title: text, description: '' };
+    const lastParen = text.lastIndexOf(')');
+    if(lastParen === -1 || lastParen < firstParen) return { title: text, description: '' };
+    return {
+      title: text.slice(0, firstParen).trim(),
+      description: text.slice(firstParen + 1, lastParen).trim()
+    };
+  }
+
+  // Card-style checklist for Warning/Severe Signs: bold title + muted
+  // description, both derived purely for display from the same option
+  // string buildCheckboxList would otherwise show inline. The checkbox's
+  // value attribute is still the full original string, so getChecked() and
+  // everything downstream (validation, submission) is completely unchanged.
+  function buildDescriptiveChecklist(containerId, name, options){
+    const el = document.getElementById(containerId);
+    el.innerHTML = options.map(opt => {
+      const parts = splitTitleDescription(opt);
+      const safeValue = opt.replace(/"/g,'&quot;');
+      return '<label><input type="checkbox" name="'+name+'" value="'+safeValue+'">' +
+        '<span class="cs-item-text">' +
+          '<span class="cs-item-title">'+parts.title+'</span>' +
+          (parts.description ? '<span class="cs-item-desc">'+parts.description+'</span>' : '') +
+        '</span></label>';
+    }).join('');
+  }
+
+  function getChecked(name){
+    return Array.from(document.querySelectorAll('input[name="'+name+'"]:checked')).map(el => el.value).join(', ');
+  }
+
+  buildRadioGroup('feverGroup', 'fever', [
+    'Yes, Low (37.5c - 37.9c)', 'Yes, Moderate (38.0c - 38.7c)', 'Yes, High (38.8c - 42c)', 'No'
+  ], true);
+
+  buildCheckboxList('signsGroup', 'signs', [
+    'Headache', 'Body Malaise', 'Muscle Pain (sakit sa kalamnan)', 'Joint Pain (sakit sa kasukasuan)',
+    'Eye Pain (sakit sa likod ng mata)', 'Rashes', 'Nausea', 'Vomiting', 'Anorexia', 'Diarrhea',
+    'Flushed Skin', 'Low WBC count (<5,000/mm³ on CBC)', 'None'
+  ]);
+
+  buildDescriptiveChecklist('warningGroup', 'warning', [
+    'Abdominal pain or tenderness',
+    'Persistent vomiting (>3 times episodes per hour or >4 in 6 hours)',
+    'Clinical signs of fluid accumulation (pleural effusion, ascites, pericardial effusion, pedal edema)',
+    'Mucosal bleeding (e.g. gums, nose, vagina [metrorrhagia or hypermenorrhea], kidney [macroscopic hematuria])',
+    'Altered mental status (irritability, drowsiness, lethargy, restlessness, Glasgow coma scale score <15)',
+    'Liver enlargement (≥2cm below costal margin)',
+    'Increase in hematocrit concurrent with rapid decrease in platelet count',
+    'None'
+  ]);
+
+  buildDescriptiveChecklist('severeGroup', 'severe', [
+    'Severe Plasma Leakage (Evidenced by hypovolemic shock or extravascular fluid accumulation (e.g., pleural or pericardial effusion, ascites) with respiratory distress.)',
+    'Severe bleeding (Profuse bleeding from gums or anus, prolonged menstrual bleeding in between periods, GI bleed, blood in urine or stool)',
+    'Severe Organ Impairment (AST or ALT > 1000, seizures, impaired consciousness, myocarditis, renal failure)',
+    'None'
+  ]);
+
+  // "None" is mutually exclusive with every other option in its own group —
+  // checking None unchecks everything else, checking anything else unchecks
+  // None. Purely a UX enhancement on top of the existing checkbox markup;
+  // getChecked() and all validation/submission logic are unchanged.
+  function wireNoneExclusivity(name){
+    const boxes = document.querySelectorAll('input[name="'+name+'"]');
+    boxes.forEach(box => {
+      box.addEventListener('change', () => {
+        if(!box.checked) return;
+        if(box.value === 'None'){
+          boxes.forEach(other => { if(other !== box) other.checked = false; });
+        } else {
+          boxes.forEach(other => { if(other.value === 'None') other.checked = false; });
+        }
+      });
+    });
+  }
+
+  wireNoneExclusivity('signs');
+  wireNoneExclusivity('warning');
+  wireNoneExclusivity('severe');
+
+  const LAB_RESULT_OPTIONS = ['Positive', 'Negative', 'Pending Results', 'Not Done'];
+  buildRadioGroup('ns1Group', 'ns1', LAB_RESULT_OPTIONS, true);
+  buildRadioGroup('iggIgmGroup', 'iggigm', LAB_RESULT_OPTIONS, true);
+
+  buildRadioGroup('confirmatoryGroup', 'confirmatory', [
+    'Viral Culture Isolation', 'PCR', 'Pending Results', 'None'
+  ], true);
+
+  buildRadioGroup('confirmatoryPositiveGroup', 'confirmatoryPositive', [
+    'Yes', 'No', 'Pending Results', 'Not Done'
+  ], true);
+
+  // "Any Confirmatory Result came back positive?" only makes sense once an
+  // actual confirmatory lab (Viral Culture Isolation or PCR) was done — in
+  // every other case it's hidden and auto-set to whichever answer actually
+  // reflects the parent selection: "Pending Results" mirrors a pending lab,
+  // "Not Done" reflects no lab having been run at all. This keeps the
+  // required-field check passing without needing interaction with a hidden
+  // field, and keeps the auto-set value honest rather than one generic default.
+  document.querySelectorAll('input[name="confirmatory"]').forEach(input => {
+    input.addEventListener('change', () => {
+      if(!input.checked) return;
+      const labDone = input.value === 'Viral Culture Isolation' || input.value === 'PCR';
+      document.getElementById('confirmatoryPositiveField').style.display = labDone ? 'block' : 'none';
+      if(!labDone){
+        const autoValue = input.value === 'Pending Results' ? 'Pending Results' : 'Not Done';
+        const target = document.querySelector('input[name="confirmatoryPositive"][value="'+autoValue+'"]');
+        if(target) target.checked = true;
+      }
+    });
+  });
+
+  buildCheckboxList('animalsGroup', 'animals', [
+    'Chicken', 'Birds', 'Other forms of Birds', 'Mosquito', 'Flies', 'Dog', 'Rats', 'Cat'
+  ]);
+
+  buildCheckboxList('waterInGroup', 'waterIn', [
+    'Water Storage Containers', 'Flower Vase', 'Dish Drain', 'Others'
+  ]);
+
+  buildCheckboxList('waterOutGroup', 'waterOut', [
+    'Tin cans', 'Used tires', 'Coconut shells/husks', 'Roof gutter', 'Drums', 'Lagoons',
+    'Bamboo holes', 'Bottles', 'Water Jars', 'Canals (stagnant)', 'Others'
+  ]);
+
+  // ---- Branching: show Section 2 (hospital) or Section 3 (consultation)
+  // based on "Was the Patient hospitalized?" — both converge at Section 4. ----
+  document.querySelectorAll('input[name="hospitalized"]').forEach(input => {
+    input.addEventListener('change', () => {
+      const isHospitalized = input.value === 'Yes' && input.checked;
+      const isNotHospitalized = input.value === 'No' && input.checked;
+      if(input.checked){
+        document.getElementById('section2').style.display = isHospitalized ? 'block' : 'none';
+        document.getElementById('section3').style.display = isNotHospitalized ? 'block' : 'none';
+      }
+    });
+  });
+
+  // ---- Branching: show Latest Platelet Count / Latest Hematocrit only
+  // when a CBC with Platelet Count was actually done. ----
+  document.querySelectorAll('input[name="Complete Blood Count with Platelet Count"]').forEach(input => {
+    input.addEventListener('change', () => {
+      if(!input.checked) return;
+      const show = input.value === 'Yes' ? 'block' : 'none';
+      document.getElementById('cbcPlateletField').style.display = show;
+      document.getElementById('cbcHematocritField').style.display = show;
+    });
+  });
+
+  // ---- Show/hide an "Others" free-text field based on whether the
+  // "Others" checkbox in its own group is checked. ----
+  function wireOthersField(groupName, fieldId){
+    document.querySelectorAll('input[name="'+groupName+'"]').forEach(box => {
+      box.addEventListener('change', () => {
+        const othersChecked = document.querySelector('input[name="'+groupName+'"][value="Others"]').checked;
+        document.getElementById(fieldId).style.display = othersChecked ? 'block' : 'none';
+      });
+    });
+  }
+  wireOthersField('waterIn', 'waterInOthersField');
+  wireOthersField('waterOut', 'waterOutOthersField');
+
+  // Auto-capitalize the first letter of each word in name fields on blur —
+  // "dela cruz" becomes "Dela Cruz", "mary jane" becomes "Mary Jane".
+  function capitalizeWords(str){
+    return str.replace(/\b\w/g, ch => ch.toUpperCase());
+  }
+  ['Last Name', 'First Name', 'Middle Name'].forEach(id => {
+    document.getElementById(id).addEventListener('blur', (e) => {
+      if(e.target.value.trim()) e.target.value = capitalizeWords(e.target.value);
+    });
+  });
+
+  // "Place of Recent Travel" and "If exposed... names?" are follow-up
+  // fields that only apply when their parent question is Yes.
+  document.querySelectorAll('input[name="History of Travel in the past 2 weeks"]').forEach(input => {
+    input.addEventListener('change', () => {
+      if(!input.checked) return;
+      document.getElementById('placeOfTravelField').style.display = input.value === 'Yes' ? 'block' : 'none';
+    });
+  });
+  document.querySelectorAll('input[name="Exposed to person of similar manifestation"]').forEach(input => {
+    input.addEventListener('change', () => {
+      if(!input.checked) return;
+      document.getElementById('exposedNamesField').style.display = input.value === 'Yes' ? 'block' : 'none';
+    });
+  });
+
+  (function populateBarangayDropdown(){
+    const select = document.getElementById('Barangay');
+    const names = ligaoBarangayGeoJSON.features
+      .map(f => f.properties.name)
+      .sort((a, b) => a.localeCompare(b));
+    names.forEach(name => {
+      const opt = document.createElement('option');
+      opt.value = name;
+      opt.textContent = name;
+      select.appendChild(opt);
+    });
+  })();
+
+  // ---- Ligao bounding box, computed from the same GeoJSON, used to catch
+  // geolocation results that land nowhere near Ligao (see locBtn handler below). ----
+  const LIGAO_BOUNDS = (function computeLigaoBounds(){
+    let minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity;
+    ligaoBarangayGeoJSON.features.forEach(f => {
+      f.geometry.coordinates.forEach(ring => {
+        ring.forEach(([lng, lat]) => {
+          if(lat < minLat) minLat = lat;
+          if(lat > maxLat) maxLat = lat;
+          if(lng < minLng) minLng = lng;
+          if(lng > maxLng) maxLng = lng;
+        });
+      });
+    });
+    // ~0.05° buffer (roughly 5-6km) so a survey point just outside the
+    // mapped barangay polygons but still plausibly in Ligao isn't flagged.
+    const pad = 0.05;
+    return {
+      minLat: minLat - pad, maxLat: maxLat + pad,
+      minLng: minLng - pad, maxLng: maxLng + pad,
+      centerLat: (minLat + maxLat) / 2,
+      centerLng: (minLng + maxLng) / 2
+    };
+  })();
+
+  function isWithinLigao(lat, lng){
+    return lat >= LIGAO_BOUNDS.minLat && lat <= LIGAO_BOUNDS.maxLat &&
+           lng >= LIGAO_BOUNDS.minLng && lng <= LIGAO_BOUNDS.maxLng;
+  }
+
+  // ---- City Health Office, Ligao City — used as the map's initial pin on
+  // page load, and as the fallback center when a geolocation result lands
+  // outside Ligao entirely.
+  const CHO_LIGAO = {
+    lat: 13.238194,
+    lng: 123.533333
+  };
+  // ---- Map + Geolocation ----
+  let map, marker;
+
+  function initMap(lat, lng, zoom){
+    if(map) return;
+
+    map = L.map('map').setView([lat, lng], zoom || 18);
+
+    const satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+      maxZoom: 19, attribution: 'Tiles © Esri'
+    });
+    const streetLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19, attribution: '© OpenStreetMap'
+    });
+
+    streetLayer.addTo(map);
+    L.control.layers({ 'Street': streetLayer, 'Satellite': satelliteLayer }, null, { position: 'topright' }).addTo(map);
+
+    // Self-contained red pin icon (inline SVG, no external image dependency)
+    const redPinIcon = L.divIcon({
+      className: 'red-pin-icon',
+      // Standard teardrop map-pin shape (the same path used by Material
+      // Design's "place" icon) — a single smooth outline rather than the
+      // circle+triangle composite from before, which was leaving a visible seam.
+      html: '<svg width="26" height="26" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">' +
+              '<path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" fill="#DC2626" stroke="#7F1D1D" stroke-width="0.6"/>' +
+              '<circle cx="12" cy="9" r="2.6" fill="#fff"/>' +
+            '</svg>',
+      iconSize: [26, 26],
+      iconAnchor: [13, 24]
+    });
+
+    marker = L.marker([lat, lng], { icon: redPinIcon }).addTo(map);
+
+    // Click-to-place instead of drag — tap anywhere on the map to move the pin there.
+    map.on('click', e => {
+      marker.setLatLng(e.latlng);
+      updateCoordsReadout(e.latlng.lat, e.latlng.lng);
+    });
+
+    // Search box — lets field staff search an address or place name instead
+    // of relying only on GPS or manually placing the pin. Uses Nominatim, the
+    // free OpenStreetMap geocoder — same provider family as the map tiles already in use.
+    L.Control.geocoder({
+      defaultMarkGeocode: false,
+      placeholder: 'Search address or place…',
+      collapsed: false
+    }).on('markgeocode', e => {
+      const center = e.geocode.center;
+      map.setView(center, 18);
+      marker.setLatLng(center);
+      updateCoordsReadout(center.lat, center.lng);
+    }).addTo(map);
+  }
+
+  // Pans/zooms the map to fit the selected barangay's extent, so field staff
+  // get visual context for roughly where they are before hunting for the
+  // exact house. Doesn't draw anything on the map or move the pin itself —
+  // the pin stays a separate, deliberate action (search, GPS, or click).
+  function panToBarangay(name){
+    if(!map || !name) return;
+
+    const feature = ligaoBarangayGeoJSON.features.find(
+      f => f.properties.name.toLowerCase() === name.toLowerCase()
+    );
+    if(!feature) return;
+
+    const bounds = L.geoJSON(feature).getBounds();
+    map.fitBounds(bounds, { padding: [20, 20], maxZoom: 16 });
+  }
+
+  document.getElementById('Barangay').addEventListener('change', (e) => {
+    panToBarangay(e.target.value);
+  });
+
+  function updateCoordsReadout(lat, lng, outOfBounds){
+    const el = document.getElementById('coordsReadout');
+    if(outOfBounds){
+      el.innerHTML = '⚠️ Your device reported a location outside Ligao City — this is common on ' +
+        'desktop/laptop browsers, which estimate position from WiFi/network data rather than GPS, ' +
+        'and can be far off. The map has been centered on the City Health Office instead — please click/tap ' +
+        'the map at the actual household. On a phone, tapping "Use Current Location" again usually gives a much more accurate GPS fix.';
+      el.style.color = 'var(--warning)';
+    } else {
+      el.textContent = 'Pin: ' + lat.toFixed(6) + ', ' + lng.toFixed(6) + ' — click/tap the map to correct it if needed.';
+      el.style.color = '';
+    }
+    window.capturedLat = lat;
+    window.capturedLng = lng;
+  }
+
+  // Show a pin immediately on page load — defaulting to the City Health
+  // Office — rather than leaving the map blank until "Use Current Location"
+  // is pressed. Zoomed out a bit further (15) since this is just a default
+  // starting point, not a confirmed household location yet.
+  initMap(CHO_LIGAO.lat, CHO_LIGAO.lng, 15);
+  document.getElementById('coordsReadout').textContent =
+    'Default pin: City Health Office, Ligao City. Search above, tap "Use Current Location", or click/tap the map to place the pin at the actual household.';
+  window.capturedLat = CHO_LIGAO.lat;
+  window.capturedLng = CHO_LIGAO.lng;
+
+  document.getElementById('locBtn').addEventListener('click', () => {
+    if(!navigator.geolocation){
+      document.getElementById('coordsReadout').textContent = 'Geolocation is not supported on this device. Please contact support.';
+      return;
+    }
+    document.getElementById('coordsReadout').textContent = 'Getting location…';
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        let lat = pos.coords.latitude, lng = pos.coords.longitude;
+        const outOfBounds = !isWithinLigao(lat, lng);
+
+        // Don't center the map on a location that isn't even in Ligao —
+        // that leaves the user panning across the whole Philippines to find
+        // their real position. Fall back to the City Health Office instead.
+        if(outOfBounds){
+          lat = CHO_LIGAO.lat;
+          lng = CHO_LIGAO.lng;
+        }
+
+        map.setView([lat, lng], outOfBounds ? 15 : 18);
+        marker.setLatLng([lat, lng]);
+        updateCoordsReadout(lat, lng, outOfBounds);
+      },
+      err => {
+        document.getElementById('coordsReadout').textContent =
+          'Could not get location (' + err.message + '). You can still submit — coordinates will be blank.';
+      },
+      { enableHighAccuracy: true, timeout: 15000 }
+    );
+  });
+
+  // ---- SCOUT logo animation — ported from the dashboard's sidebar logo ----
+  (function scoutLogoAnimation(){
+    const logo = document.getElementById("scoutLogo");
+    const pulse = document.getElementById("scoutPulse");
+    const shine = document.getElementById("scoutHighlight");
+    const halo = document.getElementById("scoutHalo");
+    const letterGlow = document.getElementById("scoutLetterGlow");
+
+    if(!logo || !pulse) return;
+
+    function playScoutPulse(){
+      pulse.classList.remove("animate");
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          pulse.classList.add("animate");
+        });
+      });
+    }
+
+    setTimeout(playScoutPulse, 1500);
+
+    logo.addEventListener("mouseenter", () => {
+      shine.classList.remove("animate");
+      halo.classList.remove("animate");
+      letterGlow.classList.remove("animate");
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          shine.classList.add("animate");
+          halo.classList.add("animate");
+          letterGlow.classList.add("animate");
+        });
+      });
+    });
+
+    logo.addEventListener("click", playScoutPulse);
+  })();
+
+  // =========================================================================
+  // ---- Hosted-form config ----
+  // FORM_VERSION must be >= OFFLINE_MIN_FORM_VERSION in doPost() (Code.gs) or
+  // the server will reject submissions with code "OUTDATED" until this form
+  // is republished with a higher number. Bump this every time a change here
+  // would make an un-updated copy unsafe to keep accepting.
+  const FORM_VERSION = 1;
+
+  // Filled in once per deployment -- see README.md. This is the same /exec
+  // URL your Apps Script "Manage deployments" page shows; it is public
+  // (deployed as "Anyone") but every request must still carry a valid
+  // access code, checked server-side in doPost().
+  const APPS_SCRIPT_URL = 'PASTE_YOUR_DEPLOYED_WEB_APP_URL_HERE';
+
+  // ---- Access code (kept only on this device; never in this file's source) ----
+  const ACCESS_CODE_KEY = 'scout_dengue_access_code';
+
+  function getAccessCode(){
+    try { return localStorage.getItem(ACCESS_CODE_KEY) || ''; }
+    catch(e){ return ''; }
+  }
+  function setAccessCode(code){
+    try { localStorage.setItem(ACCESS_CODE_KEY, code); } catch(e){ /* memory only, re-asks each visit */ }
+  }
+
+  // One shared POST helper. Content-Type text/plain avoids the browser
+  // sending a CORS preflight OPTIONS request first -- Apps Script's doPost
+  // only ever sees a real request this way, which is the pattern that
+  // reliably works from a page hosted outside script.google.com.
+  function postToServer(body, timeoutMs){
+    return new Promise(resolve => {
+      const ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+      const timer = setTimeout(() => { if(ctrl) ctrl.abort(); }, timeoutMs || SEND_TIMEOUT_MS);
+      fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(body),
+        signal: ctrl ? ctrl.signal : undefined
+      })
+      .then(r => r.json())
+      .then(json => { clearTimeout(timer); resolve({ ok:true, json }); })
+      .catch(err => { clearTimeout(timer); resolve({ ok:false, error: (err && err.message) || 'Network error' }); });
+    });
+  }
+
+  // Verifies a typed access code against the server WITHOUT submitting a
+  // case (doPost's "ping" action). Resolves true/false/'offline'.
+  async function verifyAccessCode(code){
+    const res = await postToServer({ accessCode: code, formVersion: FORM_VERSION, action: 'ping' }, 15000);
+    if(!res.ok) return 'offline';
+    if(res.json && res.json.success) return true;
+    return false;
+  }
+
+  // ---- Offline queue ----
+  const QUEUE_KEY = 'scout_dengue_queue_v1';
+  const RETRY_MS = 5 * 60 * 1000;          // background retry every 5 minutes
+  const SEND_TIMEOUT_MS = 45000;           // fetch can hang offline
+  const STALE_MS = 3 * 24 * 60 * 60 * 1000; // badge turns red after 3 days waiting
+  let memoryQueue = [];                    // fallback if browser storage is blocked
+  const inFlight = new Set();
+  let flushing = false;
+
+  // Is browser storage actually usable?
+  let storageOK = true;
+  try {
+    localStorage.setItem('__scout_test', '1');
+    localStorage.removeItem('__scout_test');
+  } catch(e){ storageOK = false; }
+
+  function loadQueue(){
+    if(!storageOK) return memoryQueue;
+    try {
+      const raw = localStorage.getItem(QUEUE_KEY);
+      return raw ? JSON.parse(raw) : [];
+    } catch(e){
+      return memoryQueue;
+    }
+  }
+  function saveQueue(q){
+    memoryQueue = q;
+    if(!storageOK) return;
+    try { localStorage.setItem(QUEUE_KEY, JSON.stringify(q)); } catch(e){ /* memory only */ }
+  }
+  function newSubmissionId(){
+    if(window.crypto && crypto.randomUUID) return crypto.randomUUID();
+    return 'sub-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10);
+  }
+
+  // Resolves {ok, caseNumber, duplicate} | {ok:false, retry:true|false, error}
+  // retry:true  = network/lock/config/timeout problem -> keep and try again later
+  // retry:false = the server rejected the data (or the access code / form
+  //               version is bad)                    -> will never succeed as-is
+  async function sendItem(item){
+    const res = await postToServer({
+      accessCode: getAccessCode(),
+      formVersion: FORM_VERSION,
+      action: 'dengueCase',
+      data: item.data,
+      submissionId: item.id
+    });
+
+    if(!res.ok) return { ok:false, retry:true, error: res.error };
+
+    const j = res.json || {};
+    if(j.success){
+      return { ok:true, caseNumber: j.caseNumber, duplicate: !!j.duplicate };
+    }
+    // AUTH / OUTDATED are configuration problems, not bad case data -- still
+    // worth retrying (a corrected access code or a republished form fixes
+    // it), but the item must NOT be discarded as "rejected".
+    if(j.code === 'AUTH' || j.code === 'OUTDATED' || j.code === 'SERVER'){
+      return { ok:false, retry:true, error: j.error || 'Server problem' };
+    }
+    return { ok:false, retry:false, error: j.error || 'Rejected by server' };
+  }
+
+  async function attemptItem(item){
+    inFlight.add(item.id);
+    let res;
+    try { res = await sendItem(item); } finally { inFlight.delete(item.id); }
+
+    let q = loadQueue();
+    if(res.ok){
+      q = q.filter(x => x.id !== item.id);
+    } else {
+      const it = q.find(x => x.id === item.id);
+      if(it){
+        it.attempts = (it.attempts || 0) + 1;
+        it.lastError = res.error;
+        it.status = res.retry ? 'failed' : 'rejected';
+      }
+    }
+    saveQueue(q);
+    renderQueueBadge();
+    return res;
+  }
+
+  async function flushQueue(){
+    if(flushing) return;
+    flushing = true;
+    try {
+      const todo = loadQueue().filter(x => x.status !== 'rejected' && !inFlight.has(x.id));
+      for(const item of todo){
+        const res = await attemptItem(item);
+        if(!res.ok && res.retry) break;   // probably still offline; stop until next tick
+      }
+    } finally {
+      flushing = false;
+    }
+  }
+
+  // ---- small DOM helper ----
+  function el(tag, css, text){
+    const e = document.createElement(tag);
+    if(css) e.style.cssText = css;
+    if(text !== undefined) e.textContent = text;
+    return e;
+  }
+
+  function ageLabel(iso){
+    const h = Math.floor((Date.now() - new Date(iso).getTime()) / 3600000);
+    if(h < 1) return 'under 1 hour';
+    if(h < 48) return h + ' hour(s)';
+    return Math.floor(h / 24) + ' day(s)';
+  }
+
+  // ---- Badge: small round button + numbered notification dot, draggable
+  // up/down along the left edge only. Same design as the Apps Script form's
+  // queue badge -- see that patch's comments for the full rationale.
+  const BADGE_TOP_KEY = 'scout_dengue_badge_top';
+  const BADGE_H = 40;
+  const BADGE_MARGIN = 8;
+
+  function clampBadgeTop(top){
+    const max = window.innerHeight - BADGE_H - BADGE_MARGIN;
+    return Math.min(Math.max(top, BADGE_MARGIN), Math.max(max, BADGE_MARGIN));
+  }
+  function loadBadgeTop(){
+    try {
+      const v = Number(localStorage.getItem(BADGE_TOP_KEY));
+      if(isFinite(v) && v > 0) return clampBadgeTop(v);
+    } catch(e){ /* fall through */ }
+    return clampBadgeTop(window.innerHeight / 2 - BADGE_H / 2);
+  }
+  function saveBadgeTop(top){
+    try { localStorage.setItem(BADGE_TOP_KEY, String(Math.round(top))); } catch(e){ /* not critical */ }
+  }
+
+  function makeBadgeDraggable(btn){
+    const DRAG_THRESHOLD = 6;
+    let dragging = false, moved = false, startY = 0, startTop = 0, pointerId = null;
+
+    btn.addEventListener('pointerdown', e => {
+      dragging = true; moved = false;
+      startY = e.clientY;
+      startTop = parseFloat(btn.style.top) || 0;
+      pointerId = e.pointerId;
+      btn.setPointerCapture(pointerId);
+    });
+    btn.addEventListener('pointermove', e => {
+      if(!dragging) return;
+      const dy = e.clientY - startY;
+      if(Math.abs(dy) > DRAG_THRESHOLD) moved = true;
+      if(moved){
+        const top = clampBadgeTop(startTop + dy);
+        btn.style.top = top + 'px';
+      }
+    });
+    function endDrag(){
+      if(!dragging) return;
+      dragging = false;
+      if(moved){
+        saveBadgeTop(parseFloat(btn.style.top) || 0);
+        const swallow = ev => { ev.stopPropagation(); btn.removeEventListener('click', swallow, true); };
+        btn.addEventListener('click', swallow, true);
+      }
+      try { btn.releasePointerCapture(pointerId); } catch(e2){ /* already released */ }
+    }
+    btn.addEventListener('pointerup', endDrag);
+    btn.addEventListener('pointercancel', endDrag);
+    window.addEventListener('resize', () => {
+      btn.style.top = clampBadgeTop(parseFloat(btn.style.top) || 0) + 'px';
+    });
+  }
+
+  function renderQueueBadge(){
+    let btn = document.getElementById('queueBadge');
+    if(!btn){
+      btn = el('button', 'position:fixed;left:0;top:' + loadBadgeTop() + 'px;' +
+                         'z-index:9998;width:40px;height:40px;border:none;' +
+                         'border-radius:0 20px 20px 0;background:#fff;' +
+                         'box-shadow:2px 0 8px rgba(0,0,0,.25);cursor:grab;' +
+                         'touch-action:none;' +
+                         'display:flex;align-items:center;justify-content:center;padding:0;');
+      btn.id = 'queueBadge';
+      btn.type = 'button';
+      makeBadgeDraggable(btn);
+      const iconWrap = el('span', 'width:20px;height:20px;pointer-events:none;' +
+                                  'display:flex;align-items:center;justify-content:center;');
+      iconWrap.innerHTML =
+        '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" ' +
+             'xmlns="http://www.w3.org/2000/svg">' +
+          '<path d="M4 12h4l2 3h4l2-3h4" stroke="#374151" stroke-width="1.8" ' +
+                'stroke-linecap="round" stroke-linejoin="round"/>' +
+          '<path d="M4 12V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v6" stroke="#374151" ' +
+                'stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>' +
+          '<path d="M4 12v6a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-6" stroke="#374151" ' +
+                'stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>' +
+        '</svg>';
+      btn.appendChild(iconWrap);
+      const dot = el('span', 'position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;' +
+                             'padding:0 4px;border-radius:9px;background:#F59E0B;color:#fff;' +
+                             'font-size:11px;font-weight:700;line-height:18px;text-align:center;' +
+                             'box-shadow:0 0 0 2px #fff;pointer-events:none;');
+      dot.id = 'queueBadgeDot';
+      btn.appendChild(dot);
+      document.body.appendChild(btn);
+      btn.addEventListener('click', openQueuePanel);
+    }
+
+    const q = loadQueue();
+    const waiting = q.filter(x => x.status !== 'rejected');
+    const review = q.filter(x => x.status === 'rejected').length;
+    const count = waiting.length + review;
+    if(!count){ btn.remove(); return; }
+
+    let stale = false;
+    let oldestLabel = '';
+    if(waiting.length){
+      const oldest = waiting.reduce((a, b) => (a.queuedAt < b.queuedAt ? a : b));
+      stale = (Date.now() - new Date(oldest.queuedAt).getTime()) >= STALE_MS;
+      oldestLabel = ' (oldest: ' + ageLabel(oldest.queuedAt) + ')';
+    }
+    const dot = document.getElementById('queueBadgeDot');
+    dot.textContent = count > 99 ? '99+' : String(count);
+    dot.style.background = (stale || review) ? '#DC2626' : '#F59E0B';
+
+    const parts = [];
+    if(waiting.length) parts.push(waiting.length + ' case(s) saved on this device, not yet sent' + oldestLabel);
+    if(review) parts.push(review + ' need review');
+    btn.title = parts.join(' · ') + ' — tap for details';
+  }
+
+  function showStorageWarning(){
+    if(storageOK) return;
+    const anchor = document.getElementById('statusMsg');
+    const w = el('div', 'margin:8px 0;padding:10px 12px;border-radius:8px;font-size:13px;' +
+                        'background:#fde2e1;color:#8a1c17;',
+      'This browser is blocking storage, so cases can NOT be saved offline. ' +
+      'Only submit while you have signal, and try a different browser (e.g. Chrome, not private mode) if this keeps appearing.');
+    anchor.parentNode.insertBefore(w, anchor);
+  }
+
+  // ---- Details / backup panel ----
+  function backupText(items){
+    return JSON.stringify(items.map(x => ({
+      id: x.id, queuedAt: x.queuedAt, status: x.status,
+      lastError: x.lastError || '', data: x.data
+    })), null, 2);
+  }
+  function copyText(text, ta){
+    return new Promise(resolve => {
+      const fallback = () => {
+        try { ta.focus(); ta.select(); resolve(document.execCommand('copy')); }
+        catch(e){ resolve(false); }
+      };
+      if(navigator.clipboard && navigator.clipboard.writeText){
+        navigator.clipboard.writeText(text).then(() => resolve(true), fallback);
+      } else { fallback(); }
+    });
+  }
+  function openQueuePanel(){
+    const q = loadQueue();
+    if(!q.length) return;
+    let copied = false;
+
+    const wrap = el('div', 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.5);' +
+                           'z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;');
+    const box = el('div', 'background:#fff;color:#222;max-width:520px;width:100%;max-height:88vh;' +
+                          'overflow:auto;border-radius:12px;padding:16px;font-size:14px;');
+    wrap.appendChild(box);
+    box.appendChild(el('div', 'font-weight:600;font-size:16px;margin-bottom:8px;', 'Cases on this device'));
+
+    q.forEach(x => {
+      const who = (x.data['Last Name'] || '') + ', ' + (x.data['First Name'] || '');
+      const status = x.status === 'rejected' ? 'REJECTED by server' :
+                     x.status === 'failed' ? 'waiting to send' : 'queued';
+      const row = el('div', 'padding:6px 0;border-bottom:1px solid #eee;');
+      row.appendChild(el('div', 'font-weight:600;', who));
+      row.appendChild(el('div', 'font-size:12px;color:#555;',
+        status + ' · saved ' + ageLabel(x.queuedAt) + ' ago · tries: ' + (x.attempts || 0)));
+      if(x.lastError) row.appendChild(el('div', 'font-size:12px;color:#8a1c17;', x.lastError));
+      box.appendChild(row);
+    });
+
+    box.appendChild(el('div', 'margin-top:10px;font-size:12px;color:#555;',
+      'Backup copy (contains patient data — send only through channels your office approves):'));
+    const ta = el('textarea', 'width:100%;height:110px;font-size:11px;margin-top:4px;');
+    ta.readOnly = true;
+    ta.value = backupText(q);
+    box.appendChild(ta);
+
+    const btns = el('div', 'display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;');
+    const mk = (label, fn) => {
+      const b = el('button', 'padding:8px 12px;border-radius:8px;border:1px solid #999;background:#f5f5f5;font-size:13px;', label);
+      b.type = 'button';
+      b.addEventListener('click', fn);
+      btns.appendChild(b);
+      return b;
+    };
+    const copyBtn = mk('Copy backup', async () => {
+      copied = await copyText(ta.value, ta);
+      copyBtn.textContent = copied ? 'Copied ✓' : 'Copy failed — select the text above and copy manually';
+      if(!copied) copied = true;
+    });
+    mk('Send now', () => { document.body.removeChild(wrap); flushQueue(); });
+    if(q.some(x => x.status === 'rejected')){
+      mk('Discard rejected', () => {
+        if(!copied){ alert('Copy the backup first, then discard.'); return; }
+        if(!confirm('Discard the REJECTED case(s) from this device? This cannot be undone.')) return;
+        saveQueue(loadQueue().filter(x => x.status !== 'rejected'));
+        renderQueueBadge();
+        document.body.removeChild(wrap);
+      });
+    }
+    mk('Close', () => document.body.removeChild(wrap));
+    box.appendChild(btns);
+    document.body.appendChild(wrap);
+  }
+
+  setInterval(flushQueue, RETRY_MS);
+  window.addEventListener('online', flushQueue);
+  document.addEventListener('visibilitychange', () => {
+    if(document.visibilityState === 'visible') flushQueue();
+  });
+
+  // ---- Numbers-only guards for the CBC fields ----
+  ['Latest Platelet Count if available', 'Latest Hematocrit if Available'].forEach(id => {
+    const input = document.getElementById(id);
+    if(!input) return;
+    input.addEventListener('keydown', e => {
+      if(e.key === 'e' || e.key === 'E' || e.key === '+' || e.key === '-') e.preventDefault();
+    });
+    input.addEventListener('paste', e => {
+      e.preventDefault();
+      const raw = ((e.clipboardData || window.clipboardData).getData('text') || '').replace(/[,\s]/g, '');
+      if(/^\d*\.?\d+$/.test(raw)) input.value = raw;
+    });
+  });
+
+  showStorageWarning();
+  renderQueueBadge();
+  flushQueue();   // send anything left over from a previous session
+
+  // ---- Submit ----
+  let casesThisSession = 0;
+  document.getElementById('submitBtn').addEventListener('click', () => {
+
+    const requiredFields = [
+      ['Date patient was seen', 'Date patient was seen'],
+      ['Last Name', 'Last Name'],
+      ['First Name', 'First Name'],
+      ['Middle Name', 'Middle Name'],
+      ['Date of Birth', 'Date of Birth'],
+      ['Barangay', 'Barangay'],
+      ['Purok', 'Purok'],
+      ['School / Work Address', 'School / Work Address'],
+      ['Investigated By', 'Investigated By']
+    ];
+
+    for(const [id, label] of requiredFields){
+      const el = document.getElementById(id);
+      if(!el.value || !el.value.trim()){
+        showStatus(label + ' is required.', true);
+        el.focus();
+        return;
+      }
+    }
+
+    const requiredRadioGroups = [
+      ['Sex', 'Sex'],
+      ['hospitalized', 'Was the Patient hospitalized?'],
+      ['fever', 'Presence of fever?'],
+      ['ns1', 'Dengue NS1 Result'],
+      ['iggigm', 'Dengue IgG/IgM Result'],
+      ['confirmatory', 'Confirmatory Laboratories Done'],
+      ['confirmatoryPositive', 'Any Confirmatory Result came back positive?'],
+      ['Outcome', 'Outcome'],
+      ['History of Travel in the past 2 weeks', 'History of Travel in the past 2 weeks']
+    ];
+
+    for(const [name, label] of requiredRadioGroups){
+      if(!document.querySelector('input[name="'+name+'"]:checked')){
+        showStatus(label + ' is required.', true);
+        return;
+      }
+    }
+
+    if(!getChecked('signs')){
+      showStatus('Signs and Symptoms is required.', true);
+      return;
+    }
+    if(!getChecked('warning')){
+      showStatus('Warning Signs is required.', true);
+      return;
+    }
+    if(!getChecked('severe')){
+      showStatus('Severe Signs is required.', true);
+      return;
+    }
+
+    const data = {};
+
+    // Date fields submit as MM/DD/YYYY rather than the native picker's ISO
+    // (YYYY-MM-DD) value — a plain string conversion, doesn't touch the
+    // picker itself, which stays the native browser control as before.
+    function toMDY(iso){
+      if(!iso) return '';
+      const parts = iso.split('-');
+      if(parts.length !== 3) return iso;
+      const [y, m, d] = parts;
+      return m + '/' + d + '/' + y;
+    }
+    ['Date patient was seen','Date of Birth','Date of Hospitalization','Date of Discharge',
+     'Date of consultation','Date of Illness Onset'].forEach(id => {
+      data[id] = toMDY(document.getElementById(id).value);
+    });
+
+    // Plain text fields, keyed by element id (matches DENGUE_CASE_HEADERS)
+    ['Last Name','First Name','Middle Name',
+     'Purok','Home Address','School / Work Address','Name of Hospital',
+     'Final Diagnosis as per Hospital',
+     'Latest Platelet Count if available','Latest Hematocrit if Available',
+     'Place of Recent Travel','Others ( Please specify):','Others (Please specify):',
+     'Investigated By'].forEach(id => {
+      data[id] = document.getElementById(id).value;
+    });
+
+    // The live sheet's existing rows have Barangay in ALL CAPS (from the
+    // original Google Form's dropdown options), while the shared GeoJSON
+    // this dropdown pulls from uses Title Case for readability. Converting
+    // here keeps new submissions consistent with every historical row,
+    // without needing to touch the dropdown itself (which Vector Survey's
+    // own, unrelated sheet also relies on, unmodified).
+    data['Barangay'] = document.getElementById('Barangay').value.toUpperCase();
+    data['Medications taken'] = document.getElementById('Medications taken').value;
+    data['If exposed to another person, what are their names?'] =
+      document.getElementById('If exposed to another person, what are their names?').value;
+
+    function radioValue(name){
+      const el = document.querySelector('input[name="'+name+'"]:checked');
+      return el ? el.value : '';
+    }
+
+    data['Sex'] = radioValue('Sex');
+    data['Was the Patient hospitalized?'] = radioValue('hospitalized');
+    data['Consultation Done?'] = radioValue('Consultation Done?');
+    data['Presence of fever?'] = radioValue('fever');
+    data['Complete Blood Count with Platelet Count'] = radioValue('Complete Blood Count with Platelet Count');
+    data['Dengue NS1 Result'] = radioValue('ns1');
+    data['Dengue IgG/IgM Result'] = radioValue('iggigm');
+    data['Confirmatory Laboratories Done'] = radioValue('confirmatory');
+    data['Any Confirmatory Result came back positive?'] = radioValue('confirmatoryPositive');
+    data['Outcome'] = radioValue('Outcome');
+    data['History of Travel in the past 2 weeks'] = radioValue('History of Travel in the past 2 weeks');
+    data['Exposed to person of similar manifestation'] = radioValue('Exposed to person of similar manifestation');
+
+    data['Signs and Symptoms'] = getChecked('signs');
+    data['Warning Signs'] = getChecked('warning');
+    data['Severe Signs'] = getChecked('severe');
+    data['Presence of animals/vectors around house or within the neighborhood 50 meters from the house'] = getChecked('animals');
+    data['Water Containers in the House'] = getChecked('waterIn');
+    data['Water Containers outside the house or within 10 meters in the neighborhood'] = getChecked('waterOut');
+
+    data.lat = window.capturedLat || '';
+    data.lng = window.capturedLng || '';
+
+    // CBC values only mean something if a CBC was done: drop stale values left
+    // in the hidden fields, then check what remains is a real number.
+    if(data['Complete Blood Count with Platelet Count'] !== 'Yes'){
+      data['Latest Platelet Count if available'] = '';
+      data['Latest Hematocrit if Available'] = '';
+    }
+    const pltVal = data['Latest Platelet Count if available'];
+    const hctVal = data['Latest Hematocrit if Available'];
+    if(pltVal !== '' && !(Number(pltVal) >= 0)){
+      showStatus('Latest Platelet Count must be a number.', true);
+      return;
+    }
+    if(hctVal !== '' && !(Number(hctVal) >= 0 && Number(hctVal) <= 100)){
+      showStatus('Latest Hematocrit must be a number from 0 to 100.', true);
+      return;
+    }
+
+    const item = {
+      id: newSubmissionId(),
+      data: data,
+      queuedAt: new Date().toISOString(),
+      attempts: 0,
+      status: 'queued'
+    };
+    saveQueue(loadQueue().concat(item));   // safe on device BEFORE any network call
+    renderQueueBadge();
+
+    document.getElementById('submitBtn').disabled = true;
+    showStatus('Submitting…', false);
+
+    attemptItem(item).then(res => {
+
+      // Server rejected the data: nothing safe to queue. Keep the form
+      // filled so nothing is lost.
+      if(!res.ok && !res.retry){
+        saveQueue(loadQueue().filter(x => x.id !== item.id));
+        renderQueueBadge();
+        showStatus('Submission failed: ' + res.error, true);
+        document.getElementById('submitBtn').disabled = false;
+        return;
+      }
+
+      const headline = document.getElementById('successHeadline');
+      if(res.ok){
+        casesThisSession++;
+        document.getElementById('sessionCount').textContent = casesThisSession;
+        if(headline) headline.textContent = 'Case report submitted successfully.';
+        document.getElementById('assignedCaseNumber').textContent = res.caseNumber || '—';
+      } else {
+        if(headline) headline.textContent =
+          'Saved on this device — NOT yet sent. Do not enter this case again; ' +
+          'it will send automatically when you have signal and this page is open.';
+        document.getElementById('assignedCaseNumber').textContent = 'assigned once sent';
+      }
+
+      document.getElementById('submitBtn').style.display = 'none';
+      document.getElementById('successBanner').style.display = 'block';
+      showStatus('', false);
+      document.getElementById('submitBtn').disabled = false;
+    });
+  });
+
+  document.getElementById('nextCaseBtn').addEventListener('click', () => {
+    document.getElementById('caseForm').reset();
+    document.getElementById('section2').style.display = 'none';
+    document.getElementById('section3').style.display = 'none';
+    document.getElementById('cbcPlateletField').style.display = 'none';
+    document.getElementById('cbcHematocritField').style.display = 'none';
+    document.getElementById('waterInOthersField').style.display = 'none';
+    document.getElementById('waterOutOthersField').style.display = 'none';
+    document.getElementById('confirmatoryPositiveField').style.display = 'none';
+    document.getElementById('placeOfTravelField').style.display = 'none';
+    document.getElementById('exposedNamesField').style.display = 'none';
+
+    document.getElementById('successBanner').style.display = 'none';
+    document.getElementById('submitBtn').style.display = '';
+    showStatus('', false);
+
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    document.getElementById('Date patient was seen').focus();
+  });
+
+  function showStatus(msg, isError, isSuccess){
+    const el = document.getElementById('statusMsg');
+    el.textContent = msg;
+    el.className = 'status-msg' + (isError ? ' error' : '') + (isSuccess ? ' success' : '');
+  }
+</script>
+
+<script>
+  // ---- Access-code gate ----
+  // Runs after the form's own script (so FORM_VERSION, APPS_SCRIPT_URL,
+  // getAccessCode/setAccessCode/verifyAccessCode are already defined) but
+  // before the person can see or use the form.
+  (function(){
+    const gate = document.getElementById('accessGate');
+    const mainPage = document.getElementById('mainPage');
+    const input = document.getElementById('accessCodeInput');
+    const button = document.getElementById('accessCodeSubmit');
+    const msg = document.getElementById('accessCodeMsg');
+
+    function revealForm(){
+      gate.style.display = 'none';
+      mainPage.style.display = '';
+      // Leaflet sizes itself off its container's on-screen dimensions at
+      // init time; the map was created while #mainPage was display:none
+      // (so it measured 0x0). invalidateSize() forces it to re-measure now
+      // that the container is actually visible, or the map tiles/controls
+      // render broken or blank until the user happens to resize/rotate.
+      if(typeof map !== 'undefined' && map){
+        setTimeout(() => map.invalidateSize(), 0);
+      }
+    }
+
+    async function tryStoredCode(){
+      const stored = getAccessCode();
+      if(!stored) return; // nothing saved yet -- leave the gate showing
+      const result = await verifyAccessCode(stored);
+      // 'offline': can't reach the server right now, but a code was already
+      // confirmed valid on this device before -- let the BHW keep working
+      // rather than lock them out purely because signal is currently down.
+      if(result === true || result === 'offline'){
+        revealForm();
+      } else {
+        msg.textContent = 'The saved access code was rejected. Please re-enter it.';
+      }
+    }
+
+    button.addEventListener('click', async () => {
+      const code = input.value.trim();
+      if(!code){ msg.textContent = 'Enter the access code first.'; return; }
+      button.disabled = true;
+      msg.textContent = 'Checking…';
+      const result = await verifyAccessCode(code);
+      button.disabled = false;
+      if(result === true){
+        setAccessCode(code);
+        revealForm();
+      } else if(result === 'offline'){
+        msg.textContent = 'No signal right now -- connect once to confirm a new code, then it will keep working offline.';
+      } else {
+        msg.textContent = 'Incorrect code. Please check with your City Health Office.';
+      }
+    });
+    input.addEventListener('keydown', e => { if(e.key === 'Enter') button.click(); });
+
+    // Auto-fill from a shared link (?code=...), e.g. from a tapped SMS link
+    // or a scanned QR code -- so a BHW never has to type the code by hand.
+    // Verified the exact same way a typed code is (through the server), and
+    // removed from the address bar immediately so it doesn't linger in the
+    // phone's browser history after this first visit.
+    async function tryLinkCode(){
+      const params = new URLSearchParams(window.location.search);
+      const linked = params.get('code');
+      if(!linked) return false;
+
+      history.replaceState({}, '', window.location.pathname);
+
+      msg.textContent = 'Checking…';
+      const result = await verifyAccessCode(linked);
+      if(result === true){
+        setAccessCode(linked);
+        revealForm();
+        return true;
+      }
+      if(result === 'offline'){
+        msg.textContent = 'No signal right now -- open this link again once you have a connection.';
+      } else {
+        msg.textContent = 'That link\'s code was not accepted. Please check with your City Health Office.';
+      }
+      return true; // handled (even if it failed) -- don't also run tryStoredCode
+    }
+
+    (async () => {
+      const handledByLink = await tryLinkCode();
+      if(!handledByLink) tryStoredCode();
+    })();
+  })();
+
+  // ---- Install the offline app shell ----
+  if('serviceWorker' in navigator){
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('service-worker.js')
+        .catch(err => console.error('Service worker registration failed:', err));
+    });
+  }
+</script>
+</body>
+</html>
