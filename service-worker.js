@@ -5,7 +5,7 @@
 // This is separate from FORM_VERSION in index.html (that one guards what the
 // SERVER will accept; this one guards what gets served from THIS phone's
 // cache).
-const CACHE_NAME = 'scout-dengue-form-v11';
+const CACHE_NAME = 'scout-dengue-form-v12';
 
 const PRECACHE = [
   './',

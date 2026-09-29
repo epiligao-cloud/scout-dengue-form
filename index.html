@@ -1724,6 +1724,138 @@ const ligaoBarangayGeoJSON =
   renderQueueBadge();
   flushQueue();   // send anything left over from a previous session
 
+  // =========================================================================
+  // ---- Draft autosave (for a form interrupted BEFORE it's ever submitted) ----
+  // Different problem from the offline queue above: the queue protects a
+  // case that was already submitted but couldn't send yet. This protects a
+  // case that never even reached Submit -- a BHW gets called away, the
+  // phone dies, etc. One slot only (not a list of many drafts): simple to
+  // reason about, and matches the single most common real scenario (one
+  // patient at a time). Deliberately does NOT try to auto-place the pin --
+  // if precise GPS/imagery placement needs a signal the BHW doesn't have
+  // right now, the draft just keeps whatever pin position exists (even the
+  // untouched default), and they can open the map and place it properly
+  // whenever they resume, including after reconnecting.
+  const DRAFT_KEY = 'scout_dengue_draft_v1';
+  const DRAFT_DEBOUNCE_MS = 800;
+  let autosaveArmed = false;
+
+  function loadDraft(){
+    try {
+      const raw = localStorage.getItem(DRAFT_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch(e){ return null; }
+  }
+  function clearDraft(){
+    try { localStorage.removeItem(DRAFT_KEY); } catch(e){ /* not critical */ }
+  }
+  function saveDraftNow(){
+    try {
+      const form = document.getElementById('caseForm');
+      const fields = {};
+      form.querySelectorAll('input[id], select[id], textarea[id]').forEach(el => {
+        if(el.type === 'radio' || el.type === 'checkbox') return; // captured via groups below
+        fields[el.id] = el.value;
+      });
+      const groups = {};
+      form.querySelectorAll('input[type=radio], input[type=checkbox]').forEach(el => {
+        if(!el.name) return;
+        if(!groups[el.name]) groups[el.name] = [];
+        if(el.checked) groups[el.name].push(el.value);
+      });
+      localStorage.setItem(DRAFT_KEY, JSON.stringify({
+        savedAt: new Date().toISOString(),
+        fields, groups,
+        lat: window.capturedLat, lng: window.capturedLng
+      }));
+    } catch(e){ /* best-effort only -- a failed autosave shouldn't break typing */ }
+  }
+
+  function applyDraft(draft){
+    const form = document.getElementById('caseForm');
+    Object.keys(draft.fields || {}).forEach(id => {
+      const el = document.getElementById(id);
+      if(el) el.value = draft.fields[id];
+    });
+    Object.keys(draft.groups || {}).forEach(name => {
+      const values = draft.groups[name] || [];
+      form.querySelectorAll('input[name="' + CSS.escape(name) + '"]').forEach(el => {
+        el.checked = values.indexOf(el.value) !== -1;
+      });
+    });
+    // Re-fire change events on the restored radios/checkboxes so the form's
+    // OWN existing branching logic (which section shows, the CBC fields,
+    // the "None" exclusivity) runs exactly as it would from a real tap --
+    // rather than duplicating that logic a second time here.
+    form.querySelectorAll('input[type=radio], input[type=checkbox]').forEach(el => {
+      if(el.checked) el.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    if(typeof draft.lat === 'number' && typeof draft.lng === 'number' &&
+       typeof map !== 'undefined' && map && typeof marker !== 'undefined' && marker){
+      window.capturedLat = draft.lat;
+      window.capturedLng = draft.lng;
+      marker.setLatLng([draft.lat, draft.lng]);
+      map.setView([draft.lat, draft.lng], 18);
+      if(typeof updateCoordsReadout === 'function' && typeof isWithinLigao === 'function'){
+        updateCoordsReadout(draft.lat, draft.lng, !isWithinLigao(draft.lat, draft.lng));
+      }
+    }
+  }
+
+  function armAutosave(){
+    if(autosaveArmed) return;
+    autosaveArmed = true;
+    const form = document.getElementById('caseForm');
+    let t = null;
+    const schedule = () => { clearTimeout(t); t = setTimeout(saveDraftNow, DRAFT_DEBOUNCE_MS); };
+    form.addEventListener('input', schedule);
+    form.addEventListener('change', schedule);
+  }
+
+  function showDraftBanner(draft){
+    const form = document.getElementById('caseForm');
+    const banner = el('div', 'margin:0 0 16px;padding:12px 14px;border-radius:8px;' +
+                             'font-size:13px;background:#EFF6FF;color:#1E3A8A;border:1px solid #BFDBFE;');
+    banner.appendChild(el('div', 'margin-bottom:8px;',
+      'You have an unfinished case saved on this device, started ' + ageLabel(draft.savedAt) + ' ago.'));
+    const btnRow = el('div', 'display:flex;flex-wrap:wrap;gap:8px;');
+    const resumeBtn = el('button', 'padding:8px 12px;border-radius:6px;border:none;' +
+                                   'background:#2C6A47;color:#fff;font-size:13px;cursor:pointer;', 'Resume this case');
+    resumeBtn.type = 'button';
+    const discardBtn = el('button', 'padding:8px 12px;border-radius:6px;border:1px solid #999;' +
+                                    'background:#fff;font-size:13px;cursor:pointer;', 'Start a new case instead');
+    discardBtn.type = 'button';
+    resumeBtn.addEventListener('click', () => {
+      applyDraft(draft);
+      banner.remove();
+      armAutosave();
+    });
+    discardBtn.addEventListener('click', () => {
+      if(!confirm('Discard the unfinished case saved on this device? This cannot be undone.')) return;
+      clearDraft();
+      banner.remove();
+      armAutosave();
+    });
+    btnRow.appendChild(resumeBtn);
+    btnRow.appendChild(discardBtn);
+    banner.appendChild(btnRow);
+    form.parentNode.insertBefore(banner, form);
+  }
+
+  function initDraftHandling(){
+    const draft = loadDraft();
+    if(draft){
+      // Don't autosave over an unresumed draft until the BHW explicitly
+      // picks Resume or Start a new case -- otherwise simply opening the
+      // form and typing a NEW case would silently overwrite the old
+      // unfinished one with no warning at all.
+      showDraftBanner(draft);
+    } else {
+      armAutosave();
+    }
+  }
+  initDraftHandling();
+
   // ---- Submit ----
   let casesThisSession = 0;
   document.getElementById('submitBtn').addEventListener('click', () => {
@@ -1872,6 +2004,7 @@ const ligaoBarangayGeoJSON =
       status: 'queued'
     };
     saveQueue(loadQueue().concat(item));   // safe on device BEFORE any network call
+    clearDraft(); // this case has moved from "unfinished draft" to "queued submission"
     renderQueueBadge();
 
     document.getElementById('submitBtn').disabled = true;
