@@ -1302,7 +1302,12 @@ const ligaoBarangayGeoJSON =
   // Verifies a typed access code against the server WITHOUT submitting a
   // case (doPost's "ping" action). Resolves true/false/'offline'.
   async function verifyAccessCode(code){
-    const res = await postToServer({ accessCode: code, formVersion: FORM_VERSION, action: 'ping' }, 15000);
+    // 25s, not 15s: Apps Script's first request after being idle can take
+    // 10-20+ seconds on its own ("cold start") before your code even runs --
+    // a tighter timeout here was reporting that normal delay as "no signal"
+    // on phones, even when the server would have answered a few seconds
+    // later. Confirmed by testing: a real response took about 10s.
+    const res = await postToServer({ accessCode: code, formVersion: FORM_VERSION, action: 'ping' }, 25000);
     if(!res.ok) return 'offline';
     if(res.json && res.json.success) return true;
     return false;
@@ -1894,18 +1899,28 @@ const ligaoBarangayGeoJSON =
       }
     }
 
-    async function tryStoredCode(){
+    function tryStoredCode(){
       const stored = getAccessCode();
       if(!stored) return; // nothing saved yet -- leave the gate showing
-      const result = await verifyAccessCode(stored);
-      // 'offline': can't reach the server right now, but a code was already
-      // confirmed valid on this device before -- let the BHW keep working
-      // rather than lock them out purely because signal is currently down.
-      if(result === true || result === 'offline'){
-        revealForm();
-      } else {
-        msg.textContent = 'The saved access code was rejected. Please re-enter it.';
-      }
+
+      // Trust it immediately -- don't make a BHW wait through a server
+      // round trip (which can take 10+ seconds on a slow connection or
+      // right after the script has been idle) just to reopen an app that
+      // was already working on this exact phone. Re-checked quietly in the
+      // background below; only an ACTUAL rejection re-locks the form.
+      revealForm();
+
+      verifyAccessCode(stored).then(result => {
+        if(result === false){
+          // Genuinely revoked/changed (not merely offline/slow) -- this is
+          // the one case worth interrupting the BHW for.
+          gate.style.display = 'flex';
+          mainPage.style.display = 'none';
+          input.value = '';
+          msg.textContent = 'This access code is no longer valid. Please re-enter it.';
+        }
+        // true or 'offline': already showing the form, nothing more to do.
+      });
     }
 
     button.addEventListener('click', async () => {
