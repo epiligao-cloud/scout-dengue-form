@@ -5,7 +5,7 @@
 // This is separate from FORM_VERSION in index.html (that one guards what the
 // SERVER will accept; this one guards what gets served from THIS phone's
 // cache).
-const CACHE_NAME = 'scout-dengue-form-v1';
+const CACHE_NAME = 'scout-dengue-form-v2';
 
 const PRECACHE = [
   './',
@@ -55,7 +55,15 @@ self.addEventListener('fetch', event => {
   if(req.url.indexOf('script.google.com') !== -1) return;
 
   event.respondWith(
-    caches.match(req).then(cached => {
+    // ignoreSearch: true -- a link like "?code=..." (the no-typing setup
+    // link/QR code) is a DIFFERENT request URL than the plain cached page,
+    // so without this a phone that already has the app cached could still
+    // fail to open it offline just because it was opened via that link.
+    // This treats "/index.html" and "/index.html?code=xyz" as the same
+    // cached page, which is correct here -- the query string only matters
+    // to the page's own JS (it reads it once, then cleans the address bar),
+    // never to which file should be served.
+    caches.match(req, { ignoreSearch: true }).then(cached => {
       if(cached) return cached;
       return fetch(req).then(res => {
         // Opportunistically cache any other same-origin asset actually used
