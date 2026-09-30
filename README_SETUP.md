@@ -18,9 +18,30 @@ Files:
    column and APP_STATUS.environment routing) if you haven't already.
 2. Apply `server_patch_doPost.gs` (adds the doPost() endpoint).
 3. In the Apps Script editor: Project Settings → Script Properties → add
-       FORM_ACCESS_CODE = <a long random string, 20+ characters>
+       FORM_ACCESS_CODE = <a long random string or phrase, 20+ characters>
    Write this down somewhere safe (e.g. a password manager) — you'll need
    to give it to your BHWs once, and again to anyone who joins later.
+
+   IMPORTANT: the code must also be baked into index.html as a scrambled
+   (hashed) value, so phones can check it instantly without ever asking the
+   server -- this is what makes typing the code feel instant instead of a
+   10-20 second wait. If you ever change FORM_ACCESS_CODE, you must also
+   update index.html to match, or phones will open locally with the OLD
+   code but fail every real submission against the NEW one on the server.
+
+   Note: there is currently no automatic way to revoke ONE specific lost or
+   compromised phone -- a phone keeps opening locally with whatever code it
+   already has until you change the code everywhere (which then blocks that
+   phone's real submissions, but the phone itself will just look "stuck,"
+   not clearly told to re-enter). If cutting off a specific phone quickly
+   ever becomes something you need, that would be a feature to add later,
+   not something built into this version.
+   To generate the matching hash for a new code, run this once (Python 3):
+
+       python3 -c "import hashlib; print(hashlib.sha256(('scout-dengue-form-v1-salt-9f3k2' + 'YOUR-NEW-CODE-HERE').encode()).hexdigest())"
+
+   Then paste the result into index.html as ACCESS_CODE_HASH (search for
+   that name), keeping ACCESS_CODE_SALT exactly as it already is.
 4. Deploy → Manage deployments → pencil icon → Version: "New version" →
    Deploy. Copy the /exec URL shown there.
 5. Add the "Submission ID" header to BOTH the "Dengue" and "Dengue_Demo"
@@ -87,16 +108,36 @@ valid; after that, it keeps working offline on that phone.
 
 ## Updating the form later
 
-1. Change files in this folder as needed.
-2. If you changed anything that makes an OLD copy on a phone unsafe to
-   keep accepting (e.g. you changed which fields are required), bump
-   FORM_VERSION in index.html AND OFFLINE_MIN_FORM_VERSION in
-   server_patch_doPost.gs, and deploy both together.
-3. Also bump CACHE_NAME in service-worker.js (e.g. 'scout-dengue-form-v2')
-   whenever any file changes, or phones may keep serving a stale cached
-   copy even after you republish.
-4. Upload the changed files to the same GitHub repository. Each phone
-   picks up the update the next time it opens the app WITH a connection.
+**Publishing an update (you):**
+1. Unzip the new zip and upload EVERYTHING in it to the GitHub repository,
+   overwriting the old files (drag the whole contents in, including the
+   `vendor` folder). Uploading every file is the safe habit: the app works out
+   by itself that something changed, so nothing has to be bumped by hand.
+2. That's it. Phones pick it up on their own (below).
+
+**What a BHW's phone does:**
+1. The next time the app is opened with a connection (or brought back to the
+   screen after a while), it quietly downloads the new version in the background.
+2. A dark bar appears at the top: **"A new version is ready" — Update now / Later**.
+3. Tapping **Update now** reloads the app on the new version. Saved cases waiting
+   to send, unfinished drafts, and the access code are NOT touched. If they were
+   mid-form, the unfinished-case popup offers to resume it.
+4. If the download fails part-way (weak signal), nothing changes: the phone
+   keeps running the old, working version and can try again later.
+
+**Checking which version a phone has:** the bottom of the form (and the access-
+code screen) shows e.g. `Version v16 · 9e36ba`. Ask a BHW to read it out. The
+**Check for updates** link next to it looks for a new version right away.
+
+**When you change what the server accepts** (for example, which fields are
+required): also raise FORM_VERSION in index.html and OFFLINE_MIN_FORM_VERSION
+in the Apps Script (server_patch_doPost.gs) together. Phones still on an older
+version then can't send cases (they stay safely queued), the queue panel says
+the form is out of date, and the app goes looking for the update by itself.
+
+**Never ask BHWs to "clear the cache" or "clear site data".** On a phone that
+also erases cases that haven't sent yet, drafts, and the access code. The
+Update bar and Check for updates link exist so they never need to.
 
 ## Known limits (carried over from earlier discussion)
 

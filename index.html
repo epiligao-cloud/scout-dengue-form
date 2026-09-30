@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
+  <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#12302D">
   <link rel="manifest" href="manifest.json">
@@ -377,6 +378,11 @@
       No signal right now? If this phone was already set up with the correct
       code before, it will keep working offline — this check only blocks a
       code that has never been confirmed on this device.
+    </div>
+    <div style="margin-top:18px;font-size:12px;color:#6B7280;">
+      <span class="app-version">Version …</span> ·
+      <a href="#" class="check-update-link" style="color:#2C6A47;">Check for updates</a>
+      <div class="update-status" style="min-height:16px;margin-top:4px;"></div>
     </div>
   </div>
 </div>
@@ -833,6 +839,12 @@
     </div>
 
   </form>
+
+  <div style="text-align:center;font-size:12px;color:#6B7280;padding:8px 0 40px;">
+    <span class="app-version">Version …</span> ·
+    <a href="#" class="check-update-link" style="color:#2C6A47;">Check for updates</a>
+    <div class="update-status" style="min-height:16px;margin-top:4px;"></div>
+  </div>
 
 </div>
 
@@ -1433,6 +1445,8 @@ const ligaoBarangayGeoJSON =
     // worth retrying (a corrected access code or a republished form fixes
     // it), but the item must NOT be discarded as "rejected".
     if(j.code === 'AUTH' || j.code === 'OUTDATED' || j.code === 'SERVER'){
+      // Too-old form: go look for the fix (an "Update ready" bar appears if one exists).
+      if(j.code === 'OUTDATED' && typeof window.scoutOnOutdated === 'function') window.scoutOnOutdated();
       return { ok:false, retry:true, error: j.error || 'Server problem' };
     }
     return { ok:false, retry:false, error: j.error || 'Rejected by server' };
@@ -1499,18 +1513,24 @@ const ligaoBarangayGeoJSON =
     const max = window.innerHeight - BADGE_H - BADGE_MARGIN;
     return Math.min(Math.max(top, BADGE_MARGIN), Math.max(max, BADGE_MARGIN));
   }
-  function loadBadgeTop(){
+  // storageKey lets more than one badge share this same drag mechanism while
+  // each remembers its OWN vertical position independently (see the drafts
+  // badge below, which reuses this rather than duplicating it).
+  function loadBadgeTopFor(storageKey, defaultTop){
     try {
-      const v = Number(localStorage.getItem(BADGE_TOP_KEY));
+      const v = Number(localStorage.getItem(storageKey));
       if(isFinite(v) && v > 0) return clampBadgeTop(v);
     } catch(e){ /* fall through */ }
-    return clampBadgeTop(window.innerHeight / 2 - BADGE_H / 2);
+    return clampBadgeTop(defaultTop);
   }
-  function saveBadgeTop(top){
-    try { localStorage.setItem(BADGE_TOP_KEY, String(Math.round(top))); } catch(e){ /* not critical */ }
+  function saveBadgeTopFor(storageKey, top){
+    try { localStorage.setItem(storageKey, String(Math.round(top))); } catch(e){ /* not critical */ }
+  }
+  function loadBadgeTop(){
+    return loadBadgeTopFor(BADGE_TOP_KEY, window.innerHeight / 2 - BADGE_H / 2);
   }
 
-  function makeBadgeDraggable(btn){
+  function makeDraggableAtKey(btn, storageKey){
     const DRAG_THRESHOLD = 6;
     let dragging = false, moved = false, startY = 0, startTop = 0, pointerId = null;
 
@@ -1534,7 +1554,7 @@ const ligaoBarangayGeoJSON =
       if(!dragging) return;
       dragging = false;
       if(moved){
-        saveBadgeTop(parseFloat(btn.style.top) || 0);
+        saveBadgeTopFor(storageKey, parseFloat(btn.style.top) || 0);
         const swallow = ev => { ev.stopPropagation(); btn.removeEventListener('click', swallow, true); };
         btn.addEventListener('click', swallow, true);
       }
@@ -1546,6 +1566,7 @@ const ligaoBarangayGeoJSON =
       btn.style.top = clampBadgeTop(parseFloat(btn.style.top) || 0) + 'px';
     });
   }
+  function makeBadgeDraggable(btn){ makeDraggableAtKey(btn, BADGE_TOP_KEY); }
 
   function renderQueueBadge(){
     let btn = document.getElementById('queueBadge');
@@ -1725,70 +1746,104 @@ const ligaoBarangayGeoJSON =
   flushQueue();   // send anything left over from a previous session
 
   // =========================================================================
-  // ---- Draft autosave (for a form interrupted BEFORE it's ever submitted) ----
-  // Different problem from the offline queue above: the queue protects a
-  // case that was already submitted but couldn't send yet. This protects a
-  // case that never even reached Submit -- a BHW gets called away, the
-  // phone dies, etc. One slot only (not a list of many drafts): simple to
-  // reason about, and matches the single most common real scenario (one
-  // patient at a time). Deliberately does NOT try to auto-place the pin --
-  // if precise GPS/imagery placement needs a signal the BHW doesn't have
-  // right now, the draft just keeps whatever pin position exists (even the
-  // untouched default), and they can open the map and place it properly
-  // whenever they resume, including after reconnecting.
-  const DRAFT_KEY = 'scout_dengue_draft_v1';
+  // ---- Draft autosave: MULTIPLE unfinished cases (for a BHW who visits ----
+  // several households before finishing any of the forms -- e.g. several
+  // dengue-positive households investigated in one day). Different problem
+  // from the offline queue above: the queue protects a case that was
+  // already submitted but couldn't send yet. This protects a case that
+  // never even reached Submit. Deliberately does NOT try to auto-place the
+  // pin -- if precise GPS/imagery placement needs a signal the BHW doesn't
+  // have right now, a draft just keeps whatever pin position exists, and
+  // they can open the map and place it properly whenever they resume.
+  const DRAFTS_KEY = 'scout_dengue_drafts_v1';
+  const ACTIVE_DRAFT_ID_KEY = 'scout_dengue_active_draft_id';
   const DRAFT_DEBOUNCE_MS = 800;
+  const MAX_DRAFTS = 15; // generous headroom above a busy day's household count
+  let activeDraftId = null;
   let autosaveArmed = false;
 
-  function loadDraft(){
+  function loadDrafts(){
     try {
-      const raw = localStorage.getItem(DRAFT_KEY);
-      return raw ? JSON.parse(raw) : null;
-    } catch(e){ return null; }
+      const raw = localStorage.getItem(DRAFTS_KEY);
+      const arr = raw ? JSON.parse(raw) : [];
+      return Array.isArray(arr) ? arr : [];
+    } catch(e){ return []; }
   }
-  function clearDraft(){
-    try { localStorage.removeItem(DRAFT_KEY); } catch(e){ /* not critical */ }
+  function saveDrafts(arr){
+    try { localStorage.setItem(DRAFTS_KEY, JSON.stringify(arr)); } catch(e){ /* best-effort */ }
   }
+  function getActiveDraftId(){
+    try { return localStorage.getItem(ACTIVE_DRAFT_ID_KEY) || null; } catch(e){ return null; }
+  }
+  function setActiveDraftId(id){
+    activeDraftId = id;
+    try {
+      if(id) localStorage.setItem(ACTIVE_DRAFT_ID_KEY, id);
+      else localStorage.removeItem(ACTIVE_DRAFT_ID_KEY);
+    } catch(e){ /* best-effort */ }
+  }
+  function removeDraft(id){
+    saveDrafts(loadDrafts().filter(d => d.id !== id));
+  }
+  function draftLabel(fields){
+    const last = (fields['Last Name'] || '').trim();
+    const first = (fields['First Name'] || '').trim();
+    if(last || first) return [last, first].filter(Boolean).join(', ');
+    return 'Unnamed case';
+  }
+
+  function snapshotForm(){
+    const form = document.getElementById('caseForm');
+    const fields = {};
+    form.querySelectorAll('input[id], select[id], textarea[id]').forEach(elx => {
+      if(elx.type === 'radio' || elx.type === 'checkbox') return; // captured via groups below
+      fields[elx.id] = elx.value;
+    });
+    const groups = {};
+    form.querySelectorAll('input[type=radio], input[type=checkbox]').forEach(elx => {
+      if(!elx.name) return;
+      if(!groups[elx.name]) groups[elx.name] = [];
+      if(elx.checked) groups[elx.name].push(elx.value);
+    });
+    return { fields, groups, lat: window.capturedLat, lng: window.capturedLng };
+  }
+
   function saveDraftNow(){
+    if(!activeDraftId) return;
     try {
-      const form = document.getElementById('caseForm');
-      const fields = {};
-      form.querySelectorAll('input[id], select[id], textarea[id]').forEach(el => {
-        if(el.type === 'radio' || el.type === 'checkbox') return; // captured via groups below
-        fields[el.id] = el.value;
-      });
-      const groups = {};
-      form.querySelectorAll('input[type=radio], input[type=checkbox]').forEach(el => {
-        if(!el.name) return;
-        if(!groups[el.name]) groups[el.name] = [];
-        if(el.checked) groups[el.name].push(el.value);
-      });
-      localStorage.setItem(DRAFT_KEY, JSON.stringify({
+      const snap = snapshotForm();
+      const drafts = loadDrafts();
+      const idx = drafts.findIndex(d => d.id === activeDraftId);
+      const entry = {
+        id: activeDraftId,
         savedAt: new Date().toISOString(),
-        fields, groups,
-        lat: window.capturedLat, lng: window.capturedLng
-      }));
+        label: draftLabel(snap.fields),
+        fields: snap.fields, groups: snap.groups,
+        lat: snap.lat, lng: snap.lng
+      };
+      if(idx === -1) drafts.push(entry); else drafts[idx] = entry;
+      saveDrafts(drafts);
     } catch(e){ /* best-effort only -- a failed autosave shouldn't break typing */ }
   }
 
   function applyDraft(draft){
     const form = document.getElementById('caseForm');
     Object.keys(draft.fields || {}).forEach(id => {
-      const el = document.getElementById(id);
-      if(el) el.value = draft.fields[id];
+      const elx = document.getElementById(id);
+      if(elx) elx.value = draft.fields[id];
     });
     Object.keys(draft.groups || {}).forEach(name => {
       const values = draft.groups[name] || [];
-      form.querySelectorAll('input[name="' + CSS.escape(name) + '"]').forEach(el => {
-        el.checked = values.indexOf(el.value) !== -1;
+      form.querySelectorAll('input[name="' + CSS.escape(name) + '"]').forEach(elx => {
+        elx.checked = values.indexOf(elx.value) !== -1;
       });
     });
     // Re-fire change events on the restored radios/checkboxes so the form's
     // OWN existing branching logic (which section shows, the CBC fields,
     // the "None" exclusivity) runs exactly as it would from a real tap --
     // rather than duplicating that logic a second time here.
-    form.querySelectorAll('input[type=radio], input[type=checkbox]').forEach(el => {
-      if(el.checked) el.dispatchEvent(new Event('change', { bubbles: true }));
+    form.querySelectorAll('input[type=radio], input[type=checkbox]').forEach(elx => {
+      if(elx.checked) elx.dispatchEvent(new Event('change', { bubbles: true }));
     });
     if(typeof draft.lat === 'number' && typeof draft.lng === 'number' &&
        typeof map !== 'undefined' && map && typeof marker !== 'undefined' && marker){
@@ -1802,7 +1857,13 @@ const ligaoBarangayGeoJSON =
     }
   }
 
-  function armAutosave(){
+  function armAutosave(id){
+    setActiveDraftId(id);
+    // Whichever draft just became active is no longer one of the "OTHER"
+    // drafts the session badge counts, and whatever was active before (now
+    // saved-but-unattended) needs to start counting again -- every switch
+    // goes through here, so this one hook keeps the badge accurate everywhere.
+    renderDraftsBadge();
     if(autosaveArmed) return;
     autosaveArmed = true;
     const form = document.getElementById('caseForm');
@@ -1812,49 +1873,195 @@ const ligaoBarangayGeoJSON =
     form.addEventListener('change', schedule);
   }
 
-  function showDraftBanner(draft){
+  function resetFormFields(){
     const form = document.getElementById('caseForm');
-    const banner = el('div', 'margin:0 0 16px;padding:12px 14px;border-radius:8px;' +
-                             'font-size:13px;background:#EFF6FF;color:#1E3A8A;border:1px solid #BFDBFE;');
-    banner.appendChild(el('div', 'margin-bottom:8px;',
-      'You have an unfinished case saved on this device, started ' + ageLabel(draft.savedAt) + ' ago.'));
-    const btnRow = el('div', 'display:flex;flex-wrap:wrap;gap:8px;');
-    const resumeBtn = el('button', 'padding:8px 12px;border-radius:6px;border:none;' +
-                                   'background:#2C6A47;color:#fff;font-size:13px;cursor:pointer;', 'Resume this case');
+    form.reset();
+    form.querySelectorAll('input[type=radio], input[type=checkbox]').forEach(elx => {
+      elx.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+  }
+
+  // A blocking popup (no backdrop-dismiss) listing every saved-but-unfinished
+  // case, since this is a real decision about real patient data -- not
+  // something to leave easy to miss or accidentally dismiss. Shown once at
+  // load whenever at least one draft exists; skipped entirely (straight to
+  // a blank, ready-to-type form) when there are none.
+  // Switching to a draft (whether from the cold-open popup or the in-session
+  // panel below) must save whatever's currently on-screen FIRST -- the
+  // debounced autosave may not have fired yet, and without this a fast
+  // switch could silently drop a few seconds of the case being left behind.
+  function switchToDraft(draft){
+    if(activeDraftId) saveDraftNow();
+    resetFormFields();
+    if(draft){ applyDraft(draft); armAutosave(draft.id); }
+    else { armAutosave(newSubmissionId()); }
+  }
+
+  // Shared row builder for a single draft's Resume/Discard controls, used by
+  // both the blocking cold-open popup and the non-blocking in-session panel
+  // -- one visual pattern, one place to fix bugs in it.
+  function buildDraftRow(draft, opts){
+    const row = el('div', 'padding:10px 0;border-bottom:1px solid #eee;' +
+                          'display:flex;justify-content:space-between;align-items:center;gap:10px;');
+    const info = el('div', '');
+    info.appendChild(el('div', 'font-weight:600;', draft.label));
+    info.appendChild(el('div', 'font-size:12px;color:#555;', 'saved ' + ageLabel(draft.savedAt) + ' ago'));
+    row.appendChild(info);
+
+    const btns = el('div', 'display:flex;gap:6px;flex-shrink:0;');
+    const resumeBtn = el('button', 'padding:7px 10px;border-radius:6px;border:none;' +
+                                   'background:#2C6A47;color:#fff;font-size:12px;cursor:pointer;', 'Resume');
     resumeBtn.type = 'button';
-    const discardBtn = el('button', 'padding:8px 12px;border-radius:6px;border:1px solid #999;' +
-                                    'background:#fff;font-size:13px;cursor:pointer;', 'Start a new case instead');
+    resumeBtn.addEventListener('click', () => { opts.onResume(); switchToDraft(draft); });
+    const discardBtn = el('button', 'padding:7px 10px;border-radius:6px;border:1px solid #999;' +
+                                    'background:#fff;font-size:12px;cursor:pointer;', 'Discard');
     discardBtn.type = 'button';
-    resumeBtn.addEventListener('click', () => {
-      applyDraft(draft);
-      banner.remove();
-      armAutosave();
-    });
     discardBtn.addEventListener('click', () => {
-      if(!confirm('Discard the unfinished case saved on this device? This cannot be undone.')) return;
-      clearDraft();
-      banner.remove();
-      armAutosave();
+      if(!confirm('Discard "' + draft.label + '"? This cannot be undone.')) return;
+      removeDraft(draft.id);
+      row.remove();
+      opts.onDiscard();
     });
-    btnRow.appendChild(resumeBtn);
-    btnRow.appendChild(discardBtn);
-    banner.appendChild(btnRow);
-    form.parentNode.insertBefore(banner, form);
+    btns.appendChild(resumeBtn);
+    btns.appendChild(discardBtn);
+    row.appendChild(btns);
+    return row;
+  }
+
+  // ---- Cold-open popup: EVERY draft, blocking (see rationale above) ----
+  function showDraftsPopup(){
+    const drafts = loadDrafts().sort((a, b) => a.savedAt < b.savedAt ? 1 : -1); // newest first
+    if(!drafts.length){ armAutosave(newSubmissionId()); return; }
+
+    const wrap = el('div', 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.5);' +
+                           'z-index:10001;display:flex;align-items:center;justify-content:center;padding:16px;');
+    const box = el('div', 'background:#fff;color:#222;max-width:480px;width:100%;max-height:85vh;' +
+                          'overflow:auto;border-radius:12px;padding:16px;font-size:14px;');
+    wrap.appendChild(box);
+
+    box.appendChild(el('div', 'font-weight:600;font-size:16px;margin-bottom:4px;', 'Unfinished cases on this device'));
+    const countLine = el('div', 'font-size:12px;color:#555;margin-bottom:12px;',
+      drafts.length + ' saved case(s). Continue one, or start a new one.');
+    box.appendChild(countLine);
+
+    drafts.forEach(draft => {
+      box.appendChild(buildDraftRow(draft, {
+        onResume: () => document.body.removeChild(wrap),
+        onDiscard: () => {
+          const remaining = loadDrafts();
+          countLine.textContent = remaining.length + ' saved case(s). Continue one, or start a new one.';
+          if(!remaining.length){ document.body.removeChild(wrap); switchToDraft(null); }
+        }
+      }));
+    });
+
+    const newBtn = el('button', 'width:100%;margin-top:14px;padding:10px;border-radius:8px;border:none;' +
+                                'background:#12302D;color:#fff;font-size:14px;cursor:pointer;',
+      drafts.length >= MAX_DRAFTS ? 'Finish or discard one above to start a new case' : '+ Start a new case');
+    newBtn.type = 'button';
+    newBtn.disabled = drafts.length >= MAX_DRAFTS;
+    if(newBtn.disabled) newBtn.style.opacity = '0.5';
+    newBtn.addEventListener('click', () => { document.body.removeChild(wrap); switchToDraft(null); });
+    box.appendChild(newBtn);
+
+    document.body.appendChild(wrap);
+  }
+
+  // ---- In-session badge + panel: OTHER drafts, non-blocking ----
+  // Deliberately excludes whichever draft is currently active/being typed
+  // into -- that one is already resolved for now, so listing it here too
+  // would just be confusing. This is a reminder for the drafts NOT
+  // currently in front of the BHW, not a duplicate of the cold-open choice.
+  const DRAFT_BADGE_TOP_KEY = 'scout_dengue_draft_badge_top';
+
+  function otherDrafts(){
+    return loadDrafts().filter(d => d.id !== activeDraftId)
+                        .sort((a, b) => a.savedAt < b.savedAt ? 1 : -1);
+  }
+
+  function openDraftsPanel(){
+    const drafts = otherDrafts();
+    if(!drafts.length) return;
+
+    const wrap = el('div', 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.5);' +
+                           'z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;');
+    wrap.addEventListener('click', e => { if(e.target === wrap) document.body.removeChild(wrap); }); // backdrop dismiss OK here -- not a forced decision
+    const box = el('div', 'background:#fff;color:#222;max-width:480px;width:100%;max-height:85vh;' +
+                          'overflow:auto;border-radius:12px;padding:16px;font-size:14px;');
+    wrap.appendChild(box);
+
+    box.appendChild(el('div', 'font-weight:600;font-size:16px;margin-bottom:4px;', 'Other unfinished cases'));
+    const countLine = el('div', 'font-size:12px;color:#555;margin-bottom:12px;',
+      'The case you\'re currently working on isn\'t affected by these.');
+    box.appendChild(countLine);
+
+    drafts.forEach(draft => {
+      box.appendChild(buildDraftRow(draft, {
+        onResume: () => { document.body.removeChild(wrap); },
+        onDiscard: () => { renderDraftsBadge(); if(!otherDrafts().length) document.body.removeChild(wrap); }
+      }));
+    });
+
+    const closeBtn = el('button', 'width:100%;margin-top:14px;padding:10px;border-radius:8px;' +
+                                  'border:1px solid #999;background:#fff;font-size:14px;cursor:pointer;', 'Close');
+    closeBtn.type = 'button';
+    closeBtn.addEventListener('click', () => document.body.removeChild(wrap));
+    box.appendChild(closeBtn);
+
+    document.body.appendChild(wrap);
+  }
+
+  function renderDraftsBadge(){
+    let btn = document.getElementById('draftsBadge');
+    const count = otherDrafts().length;
+    if(!count){ if(btn) btn.remove(); return; }
+
+    if(!btn){
+      // Positioned just below the queue badge by default (same left edge,
+      // draggable the same vertical-only way) so the two never default to
+      // overlapping, but each remembers its OWN dragged position separately
+      // once the BHW moves either one.
+      const defaultTop = loadBadgeTopFor(DRAFT_BADGE_TOP_KEY, loadBadgeTop() + BADGE_H + 10);
+      btn = el('button', 'position:fixed;left:0;top:' + defaultTop + 'px;' +
+                         'z-index:9997;width:40px;height:40px;border:none;' +
+                         'border-radius:0 20px 20px 0;background:#fff;' +
+                         'box-shadow:2px 0 8px rgba(0,0,0,.25);cursor:grab;' +
+                         'touch-action:none;' +
+                         'display:flex;align-items:center;justify-content:center;padding:0;');
+      btn.id = 'draftsBadge';
+      btn.type = 'button';
+      makeDraggableAtKey(btn, DRAFT_BADGE_TOP_KEY);
+      const iconWrap = el('span', 'width:20px;height:20px;pointer-events:none;' +
+                                  'display:flex;align-items:center;justify-content:center;');
+      // A simple pencil/document glyph -- visually distinct from the queue
+      // badge's tray icon, and a different color, so the two are never
+      // mistaken for the same kind of notification at a glance.
+      iconWrap.innerHTML =
+        '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">' +
+          '<path d="M4 20h4l11-11-4-4L4 16v4z" stroke="#1E3A8A" stroke-width="1.8" ' +
+                'stroke-linecap="round" stroke-linejoin="round"/>' +
+        '</svg>';
+      btn.appendChild(iconWrap);
+      const dot = el('span', 'position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;' +
+                             'padding:0 4px;border-radius:9px;background:#2563EB;color:#fff;' +
+                             'font-size:11px;font-weight:700;line-height:18px;text-align:center;' +
+                             'box-shadow:0 0 0 2px #fff;pointer-events:none;');
+      dot.id = 'draftsBadgeDot';
+      btn.appendChild(dot);
+      document.body.appendChild(btn);
+      btn.addEventListener('click', openDraftsPanel);
+    }
+    const dot = document.getElementById('draftsBadgeDot');
+    dot.textContent = count > 99 ? '99+' : String(count);
+    btn.title = count + ' other unfinished case(s) on this device — tap for details';
   }
 
   function initDraftHandling(){
-    const draft = loadDraft();
-    if(draft){
-      // Don't autosave over an unresumed draft until the BHW explicitly
-      // picks Resume or Start a new case -- otherwise simply opening the
-      // form and typing a NEW case would silently overwrite the old
-      // unfinished one with no warning at all.
-      showDraftBanner(draft);
-    } else {
-      armAutosave();
-    }
+    showDraftsPopup();
+    renderDraftsBadge();
   }
   initDraftHandling();
+
 
   // ---- Submit ----
   let casesThisSession = 0;
@@ -2004,7 +2211,9 @@ const ligaoBarangayGeoJSON =
       status: 'queued'
     };
     saveQueue(loadQueue().concat(item));   // safe on device BEFORE any network call
-    clearDraft(); // this case has moved from "unfinished draft" to "queued submission"
+    // This case has moved from "unfinished draft" to "queued submission" --
+    // remove it from the drafts list (it's now tracked by the badge instead).
+    if(activeDraftId){ removeDraft(activeDraftId); setActiveDraftId(null); }
     renderQueueBadge();
 
     document.getElementById('submitBtn').disabled = true;
@@ -2060,6 +2269,12 @@ const ligaoBarangayGeoJSON =
 
     window.scrollTo({ top: 0, behavior: 'smooth' });
     document.getElementById('Date patient was seen').focus();
+
+    // The previous case's draft was already removed on submit, and autosave
+    // was left with no active draft to write to -- give this next case a
+    // fresh id so it starts protecting THIS entry immediately, not only
+    // after the BHW happens to type something.
+    armAutosave(newSubmissionId());
   });
 
   function showStatus(msg, isError, isSuccess){
@@ -2150,13 +2365,183 @@ const ligaoBarangayGeoJSON =
     })();
   })();
 
-  // ---- Install the offline app shell ----
-  if('serviceWorker' in navigator){
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register('service-worker.js')
-        .catch(err => console.error('Service worker registration failed:', err));
+  // ---- Offline app shell + updates ----
+  // See the "HOW UPDATES WORK" note at the top of service-worker.js. In short: a
+  // new version downloads quietly in the background and then WAITS; this page
+  // shows an "Update ready" bar and only swaps versions when the BHW taps it, so
+  // an update can never replace the app mid-form. Saved cases, drafts and the
+  // access code live in localStorage, which updating never touches.
+  (function(){
+    function setStatus(msg){
+      document.querySelectorAll('.update-status').forEach(e => { e.textContent = msg; });
+    }
+    function setVersionLabel(text){
+      document.querySelectorAll('.app-version').forEach(e => { e.textContent = text; });
+    }
+
+    if(!('serviceWorker' in navigator)){
+      setVersionLabel('Offline install not supported in this browser');
+      document.querySelectorAll('.check-update-link').forEach(e => { e.style.display = 'none'; });
+      return;
+    }
+
+    let reg = null;
+    let updateRequested = false;   // true only after the BHW taps "Update now"
+    let lastCheck = 0;
+
+    // Ask the ACTIVE service worker which version it is (not whichever one
+    // happens to be downloading), so the label is what this phone is really running.
+    function askVersion(){
+      const ctrl = navigator.serviceWorker.controller;
+      if(!ctrl) return Promise.resolve(null);
+      return new Promise(resolve => {
+        const ch = new MessageChannel();
+        const t = setTimeout(() => resolve(null), 2000);
+        ch.port1.onmessage = e => { clearTimeout(t); resolve(e.data); };
+        ctrl.postMessage({ type: 'GET_VERSION' }, [ch.port2]);
+      });
+    }
+    async function showVersion(){
+      const v = await askVersion();
+      setVersionLabel(v ? ('Version ' + v.version + ' · ' + v.hash) : 'Version: not installed for offline use yet');
+    }
+
+    function showUpdateBar(text){
+      let bar = document.getElementById('updateBar');
+      if(!bar){
+        bar = document.createElement('div');
+        bar.id = 'updateBar';
+        // Above the access-code screen (10000) and the drafts popup (10001): a
+        // phone stuck on an old version is exactly where this needs to be seen.
+        bar.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:10002;display:flex;' +
+          'align-items:center;justify-content:space-between;gap:10px;padding:10px 14px;' +
+          'padding-top:calc(10px + env(safe-area-inset-top, 0px));background:#12302D;color:#fff;' +
+          'font-size:13px;box-shadow:0 2px 8px rgba(0,0,0,.3);';
+        const msg = document.createElement('span');
+        msg.id = 'updateBarMsg';
+        const btns = document.createElement('span');
+        btns.style.cssText = 'display:flex;gap:8px;flex-shrink:0;align-items:center;';
+        const later = document.createElement('button');
+        later.type = 'button';
+        later.textContent = 'Later';
+        later.style.cssText = 'padding:8px 6px;border:none;background:none;color:#cbd5d1;font-size:13px;cursor:pointer;';
+        later.addEventListener('click', () => bar.remove());
+        const now = document.createElement('button');
+        now.type = 'button';
+        now.textContent = 'Update now';
+        now.style.cssText = 'padding:8px 12px;border:none;border-radius:6px;background:#F59E0B;' +
+          'color:#12302D;font-weight:700;font-size:13px;cursor:pointer;';
+        now.addEventListener('click', applyUpdate);
+        btns.appendChild(later);
+        btns.appendChild(now);
+        bar.appendChild(msg);
+        bar.appendChild(btns);
+        document.body.appendChild(bar);
+      }
+      document.getElementById('updateBarMsg').textContent = text;
+    }
+
+    function onUpdateReady(){
+      showUpdateBar('A new version is ready.');
+      setStatus('Update ready — tap "Update now" at the top of the screen.');
+    }
+
+    function trackInstalling(worker){
+      if(!worker) return;
+      worker.addEventListener('statechange', () => {
+        if(worker.state === 'installed' && navigator.serviceWorker.controller){
+          onUpdateReady();
+        } else if(worker.state === 'redundant'){
+          // The download failed part-way; the phone safely keeps the old version.
+          setStatus("The update didn't finish downloading. Try again when you have a steadier signal.");
+        }
+      });
+    }
+
+    function applyUpdate(){
+      if(!reg || !reg.waiting){ checkForUpdate(true); return; }
+      updateRequested = true;
+      // The page reloads next. Anything typed is already autosaved as a draft;
+      // this just makes sure the very latest keystrokes are included.
+      try { if(typeof activeDraftId !== 'undefined' && activeDraftId) saveDraftNow(); } catch(e){ /* best effort */ }
+      reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+    }
+
+    // Fires when a new version takes over. Reload ONLY if the BHW asked for it
+    // -- the first install also triggers this, and reloading then would wipe
+    // whatever they'd already started typing (e.g. the access code).
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if(updateRequested) window.location.reload();
+      else showVersion();
     });
-  }
+
+    async function checkForUpdate(manual){
+      if(!manual && Date.now() - lastCheck < 60 * 1000) return; // don't hammer the server
+      if(!reg) reg = await navigator.serviceWorker.getRegistration();
+      if(!reg){ if(manual) setStatus('Not installed for offline use yet.'); return; }
+      if(reg.waiting){ onUpdateReady(); return; }
+      if(manual) setStatus('Checking…');
+      // Remember whether the browser found a NEW version at all, so that one
+      // that was found but failed to download isn't reported as "up to date".
+      let foundNew = false;
+      const onFound = () => { foundNew = true; };
+      reg.addEventListener('updatefound', onFound);
+      try {
+        await reg.update();
+      } catch(e){
+        if(manual) setStatus("Couldn't check — no signal? Try again when you're online.");
+        return;
+      } finally {
+        reg.removeEventListener('updatefound', onFound);
+      }
+      lastCheck = Date.now();
+      if(reg.waiting){ onUpdateReady(); return; }
+      if(reg.installing){
+        if(manual) setStatus('Downloading the update…');
+        trackInstalling(reg.installing);
+        return;
+      }
+      if(foundNew){
+        setStatus("The update didn't finish downloading. Try again when you have a steadier signal.");
+        return;
+      }
+      if(manual) setStatus('You have the latest version.');
+    }
+
+    document.addEventListener('click', e => {
+      const link = e.target.closest && e.target.closest('.check-update-link');
+      if(link){ e.preventDefault(); checkForUpdate(true); }
+    });
+
+    // Coming back to the app after it sat in the background (phones keep
+    // installed apps alive for days) is a good moment to look for an update.
+    document.addEventListener('visibilitychange', () => {
+      if(document.visibilityState === 'visible' && Date.now() - lastCheck > 30 * 60 * 1000){
+        checkForUpdate(false);
+      }
+    });
+
+    // Called by the queue when the server says this form version is too old
+    // to send cases. The queue panel already shows the reason; this just
+    // goes looking for the fix.
+    window.scoutOnOutdated = function(){ checkForUpdate(false); };
+
+    window.addEventListener('load', async () => {
+      try {
+        // updateViaCache:'none' makes the browser fetch service-worker.js fresh
+        // every time instead of trusting a short-term cached copy of it.
+        reg = await navigator.serviceWorker.register('service-worker.js', { updateViaCache: 'none' });
+      } catch(err){
+        console.error('Service worker registration failed:', err);
+        setVersionLabel('Offline install unavailable');
+        return;
+      }
+      reg.addEventListener('updatefound', () => trackInstalling(reg.installing));
+      // An update downloaded on an earlier visit but never applied.
+      if(reg.waiting && navigator.serviceWorker.controller) onUpdateReady();
+      showVersion();
+    });
+  })();
 </script>
 </body>
 </html>
